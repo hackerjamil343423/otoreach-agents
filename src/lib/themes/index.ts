@@ -8,8 +8,8 @@ import { ThemeModeValues, ThemePreset } from '@/types/theme'
 
 import { defaultPresets } from './tweakcn-presets'
 
-const DEFAULT_THEME_PRESET = 'vercel'
-const STYLE_ELEMENT_ID = 'chatgpt-lite-theme-styles'
+const DEFAULT_THEME_PRESET = 'supabase'
+const STYLE_ELEMENT_ID = 'oto-reach-agents-theme-styles'
 
 const SYSTEM_FONT_STACKS: Record<string, string> = {
   'font-sans': 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',

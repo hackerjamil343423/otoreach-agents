@@ -1,59 +1,41 @@
 import { NextRequest } from 'next/server'
-import { createAzure } from '@ai-sdk/azure'
-import { createOpenAI } from '@ai-sdk/openai'
-import type { ModelMessage } from '@ai-sdk/provider-utils'
-import { convertToModelMessages, streamText, type LanguageModel } from 'ai'
 
 export const runtime = 'edge'
 
 /**
- * Helper method to dynamically select and configure the AI model
- * based on environment variables.
- *
- * @returns {LanguageModel} Configured language model (Azure or OpenAI)
+ * OTO Reach Agents webhook endpoint
+ * This will be connected to your agent webhooks
  */
-function getModel(): LanguageModel {
-  // Check if Azure OpenAI credentials are provided
-  const azureResourceName = process.env.AZURE_OPENAI_RESOURCE_NAME
-  const azureApiKey = process.env.AZURE_OPENAI_API_KEY
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT
+async function forwardToAgentWebhook(messages: any[], input: any) {
+  // TODO: Configure your agent webhook URL here
+  const webhookUrl = process.env.AGENT_WEBHOOK_URL || ''
 
-  if (azureResourceName && azureApiKey && azureDeployment) {
-    // Use Azure OpenAI
-    const azure = createAzure({
-      resourceName: azureResourceName,
-      apiKey: azureApiKey
+  if (!webhookUrl) {
+    throw new Error('AGENT_WEBHOOK_URL not configured. Please set the environment variable.')
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      messages,
+      input
     })
-    return azure(azureDeployment)
-  }
-
-  // Fallback to OpenAI
-  const openaiApiKey = process.env.OPENAI_API_KEY
-  let openaiBaseUrl = process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1'
-  const openaiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
-  // Ensure baseURL ends with /v1 for OpenAI-compatible APIs
-  if (!openaiBaseUrl.endsWith('/v1')) {
-    openaiBaseUrl = openaiBaseUrl.replace(/\/$/, '') + '/v1'
-  }
-  if (!openaiApiKey) {
-    throw new Error(
-      'No AI provider configured. Please set either Azure OpenAI or OpenAI credentials in environment variables.'
-    )
-  }
-
-  const openai = createOpenAI({
-    apiKey: openaiApiKey,
-    baseURL: openaiBaseUrl
   })
 
-  return openai.chat(openaiModel)
+  if (!response.ok) {
+    throw new Error(`Agent webhook returned ${response.status}: ${response.statusText}`)
+  }
+
+  return response
 }
 
 type MessageContent =
   | string
   | Array<
       | { type: 'text'; text: string }
-      | { type: 'image'; image: string | URL }
       | {
           type: 'document'
           name: string
@@ -74,91 +56,24 @@ type ChatCompletionMessage = {
   content: MessageContent
 }
 
-const convertToCoreMessage = (msg: ChatCompletionMessage): ModelMessage => {
-  if (msg.role === 'system') {
-    return {
-      role: 'system',
-      content: typeof msg.content === 'string' ? msg.content : ''
-    }
-  }
-
-  if (msg.role === 'user') {
-    if (typeof msg.content === 'string') {
-      return {
-        role: 'user',
-        content: msg.content
-      }
-    }
-    return {
-      role: 'user',
-      content: msg.content.flatMap((part) => {
-        if (part.type === 'text') {
-          return [{ type: 'text', text: part.text }]
-        } else if (part.type === 'image') {
-          return [{ type: 'image', image: part.image }]
-        } else {
-          // Convert document to text and include images
-          const result: Array<{ type: 'text'; text: string } | { type: 'image'; image: string | URL }> =
-            []
-
-          // Add document text
-          result.push({
-            type: 'text',
-            text: `[Document: ${part.name}]\n\n${part.content}`
-          })
-
-          // Add document images if present
-          if (part.images && part.images.length > 0) {
-            result.push({
-              type: 'text',
-              text: `\n\n[This document contains ${part.images.length} image(s)]`
-            })
-
-            part.images.forEach((img) => {
-              result.push({
-                type: 'image',
-                image: img.dataUrl
-              })
-            })
-          }
-
-          return result
-        }
-      })
-    }
-  }
-
-  // assistant
-  return {
-    role: 'assistant',
-    content: typeof msg.content === 'string' ? msg.content : ''
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, messages, input } = (await req.json()) as {
-      prompt: string
+    const { messages, input } = (await req.json()) as {
       messages: ChatCompletionMessage[]
       input: MessageContent
     }
 
-    // Build messages array with proper typing
-    const messagesWithHistory: ModelMessage[] = [
-      { role: 'system', content: prompt },
-      ...messages.map(convertToCoreMessage),
-      convertToCoreMessage({ role: 'user', content: input })
-    ]
+    // Forward to agent webhook
+    const response = await forwardToAgentWebhook(messages, input)
 
-    // Use streamText from ai-sdk
-    const result = await streamText({
-      model: getModel(),
-      messages: messagesWithHistory,
-      temperature: 1
+    // Return the response stream
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        'Content-Type': response.headers.get('Content-Type') || 'text/plain',
+        'Transfer-Encoding': 'chunked'
+      }
     })
-
-    // Return the text stream
-    return result.toTextStreamResponse()
   } catch (error) {
     console.error(error)
     return new Response(

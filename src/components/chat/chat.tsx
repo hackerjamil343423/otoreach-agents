@@ -16,12 +16,19 @@ import { Button } from '@/components/ui/button'
 import {
   AlertCircle,
   ArrowUp,
+  Check,
+  ChevronDown,
+  Database,
   Eraser,
+  File,
+  FileCode,
+  FileJson,
   FileText,
-  ImagePlus,
   Loader2,
   Mic,
   MicOff,
+  ToggleLeft,
+  ToggleRight,
   X
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -30,7 +37,6 @@ import { StickToBottom } from 'use-stick-to-bottom'
 import ChatContext from './chatContext'
 import type { ChatMessage, MessageContent } from './interface'
 import { Message } from './message'
-import { usePersonaContext } from './personaContext'
 
 export interface ChatRef {
   setConversation: (messages: ChatMessage[], chatId?: string | null) => void
@@ -42,14 +48,12 @@ const toMessagePayload = (messages: ChatMessage[]) =>
   messages.map(({ role, content }) => ({ role, content }))
 
 const sendChatMessage = async (
-  personaPrompt: string,
   messages: ChatMessage[],
   input: MessageContent
 ) => {
   const url = '/api/chat'
 
   const data = {
-    prompt: personaPrompt,
     messages: toMessagePayload(messages),
     input
   }
@@ -74,7 +78,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     getChatById,
     onCreateDefaultChat
   } = useContext(ChatContext)
-  const { getPersonaById } = usePersonaContext()
 
   const [loadingChatId, setLoadingChatId] = useState<string | null>(null)
   const [composerError, setComposerError] = useState<string | null>(null)
@@ -82,23 +85,33 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   const [isComposing, setIsComposing] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [uploadedImages, setUploadedImages] = useState<Array<{ url: string; mimeType: string }>>([])
   const [uploadedDocuments, setUploadedDocuments] = useState<
     Array<{
       name: string
       content: string
       mimeType: string
       images?: Array<{ pageNumber: number; name: string; width: number; height: number; dataUrl: string }>
+      size?: string
+      type?: string
     }>
-  >([])
+  >([
+    { name: 'product_catalog.json', content: '{"products": [{"id": 1, "name": "Laptop", "price": 999}, {"id": 2, "name": "Mouse", "price": 29}]}', mimeType: 'application/json', size: '2.4 KB', type: 'json' },
+    { name: 'company_policies.pdf', content: 'Employee Handbook 2024\n\n1. Working Hours\n2. Leave Policy\n3. Remote Work Guidelines', mimeType: 'application/pdf', size: '156 KB', type: 'pdf' },
+    { name: 'customer_data.csv', content: 'id,name,email,plan\n1,John Doe,john@example.com,premium\n2,Jane Smith,jane@example.com,basic', mimeType: 'text/csv', size: '128 KB', type: 'csv' },
+    { name: 'api_docs.txt', content: 'API Documentation\n\nGET /api/users - List all users\nPOST /api/users - Create user\nPUT /api/users/:id - Update user\nDELETE /api/users/:id - Delete user', mimeType: 'text/plain', size: '456 B', type: 'txt' },
+    { name: 'sales_report.xlsx', content: 'Q1 Sales: $125,000\nQ2 Sales: $143,000\nQ3 Sales: $167,000\nQ4 Sales: $198,000', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: '89 KB', type: 'xlsx' },
+    { name: 'database_schema.sql', content: 'CREATE TABLE users (\n  id INT PRIMARY KEY,\n  name VARCHAR(100),\n  email VARCHAR(100) UNIQUE\n);', mimeType: 'text/plain', size: '1.2 KB', type: 'sql' },
+  ])
 
   const [currentMessage, setCurrentMessage] = useState<string>('')
   const [isListening, setIsListening] = useState(false)
+  const [fileAccessDropdownOpen, setFileAccessDropdownOpen] = useState(false)
+  const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set([0, 1, 3])) // Pre-select some files
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const recognitionRef = useRef<any>(null)
+  const fileAccessDropdownRef = useRef<HTMLDivElement | null>(null)
   const isManualStopRef = useRef<boolean>(false)
   const isListeningRef = useRef<boolean>(false)
 
@@ -137,7 +150,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     isChatHydrated &&
     hasActiveChat &&
     !isCurrentChatLoading &&
-    (Boolean(getComposerText()) || uploadedImages.length > 0 || uploadedDocuments.length > 0)
+    (Boolean(getComposerText()) || uploadedDocuments.length > 0)
   const textareaClassName =
     'text-foreground w-full min-w-0 resize-none !border-0 !bg-transparent text-base leading-relaxed break-all !outline-none !shadow-none focus:!outline-none focus:!border-0 focus:!ring-0 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 max-h-[200px] min-h-[24px] overflow-y-auto [field-sizing:content]'
 
@@ -154,52 +167,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     }
     return created ?? undefined
   }, [currentChatId, getChatById, onCreateDefaultChat])
-
-  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    Array.from(files).forEach((file) => {
-      // Check file type - on mobile browsers, file.type might be empty
-      // So also check file extension as fallback
-      const fileName = file.name.toLowerCase()
-      const isImage =
-        file.type.startsWith('image/') ||
-        fileName.endsWith('.jpg') ||
-        fileName.endsWith('.jpeg') ||
-        fileName.endsWith('.png') ||
-        fileName.endsWith('.gif') ||
-        fileName.endsWith('.webp') ||
-        fileName.endsWith('.heic') ||
-        fileName.endsWith('.heif')
-
-      if (!isImage) {
-        toast.error('Please upload an image file')
-        return
-      }
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string
-        // Use file.type if available, otherwise infer from extension
-        const mimeType = file.type || `image/${fileName.split('.').pop()}`
-        setUploadedImages((prev) => [...prev, { url: base64, mimeType }])
-      }
-      reader.onerror = (error) => {
-        console.error('Error reading file:', error)
-        toast.error(`Failed to load image: ${file.name}`)
-      }
-      reader.readAsDataURL(file)
-    })
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }, [])
-
-  const removeImage = useCallback((index: number) => {
-    setUploadedImages((prev) => prev.filter((_, i) => i !== index))
-  }, [])
 
   const handleDocumentUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -232,7 +199,11 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
         const { parseFile } = await import('@/lib/fileParser')
         const parsed = await parseFile(file)
 
-        setUploadedDocuments((prev) => [...prev, parsed])
+        setUploadedDocuments((prev) => {
+          const newIndex = prev.length
+          setAccessibleDocuments((prev) => new Set(prev).add(newIndex))
+          return [...prev, parsed]
+        })
         toast.success(`File "${file.name}" uploaded successfully`)
       } catch (error) {
         console.error('Error parsing file:', error)
@@ -246,10 +217,43 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   }, [])
 
   const removeDocument = useCallback((index: number) => {
-    setUploadedDocuments((prev) => prev.filter((_, i) => i !== index))
+    setUploadedDocuments((prev) => {
+      const filtered = prev.filter((_, i) => i !== index)
+      // Update accessible indices - remove the index and shift higher indices down
+      setAccessibleDocuments((prevSet) => {
+        const newSet = new Set<number>()
+        prevSet.forEach((i) => {
+          if (i < index) {
+            newSet.add(i)
+          } else if (i > index) {
+            newSet.add(i - 1)
+          }
+        })
+        return newSet
+      })
+      return filtered
+    })
   }, [])
 
   // Initialize speech recognition
+  useEffect(() => {
+    // Close dropdown when clicking outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        fileAccessDropdownOpen &&
+        fileAccessDropdownRef.current &&
+        !fileAccessDropdownRef.current.contains(event.target as Node)
+      ) {
+        setFileAccessDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [fileAccessDropdownOpen])
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
@@ -384,7 +388,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
       e.preventDefault()
       const input = getComposerText()
-      if (input.length < 1 && uploadedImages.length === 0 && uploadedDocuments.length === 0) {
+      if (input.length < 1 && uploadedDocuments.length === 0) {
         setComposerError('Please enter a message or upload a file to continue.')
         return
       }
@@ -403,21 +407,12 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       const targetChatId = activeChat.id
       activeChatIdRef.current = targetChatId
       const history = [...conversationRef.current]
-      const personaForChat =
-        activeChat.persona?.id && getPersonaById
-          ? (getPersonaById(activeChat.persona.id) ?? activeChat.persona)
-          : activeChat.persona
-      const personaPrompt = personaForChat?.prompt?.trim() ?? ''
-      if (!personaPrompt) {
-        setComposerError('This persona is missing a prompt. Please edit it and try again.')
-        return
-      }
-      // Build message content with text, images, and documents
+      const personaPrompt = ''
+      // Build message content with text and documents
       let messageContent: MessageContent = input
-      if (uploadedImages.length > 0 || uploadedDocuments.length > 0) {
+      if (uploadedDocuments.length > 0) {
         const contentParts: Array<
           | { type: 'text'; text: string }
-          | { type: 'image'; image: string; mimeType?: string }
           | {
               type: 'document'
               name: string
@@ -435,17 +430,16 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
         if (input) {
           contentParts.push({ type: 'text', text: input })
         }
-        uploadedImages.forEach((img) => {
-          contentParts.push({ type: 'image', image: img.url, mimeType: img.mimeType })
-        })
-        uploadedDocuments.forEach((doc) => {
-          contentParts.push({
-            type: 'document',
-            name: doc.name,
-            content: doc.content,
-            mimeType: doc.mimeType,
-            images: doc.images // Include PDF images
-          })
+        uploadedDocuments.forEach((doc, index) => {
+          if (accessibleDocuments.has(index)) {
+            contentParts.push({
+              type: 'document',
+              name: doc.name,
+              content: doc.content,
+              mimeType: doc.mimeType,
+              images: doc.images // Include PDF images
+            })
+          }
         })
         messageContent = contentParts
       }
@@ -463,14 +457,13 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       setConversation(pendingConversation, targetChatId)
       saveMessages(pendingConversation, targetChatId, { chat: activeChat })
       setMessage('')
-      setUploadedImages([])
       setUploadedDocuments([])
       setCurrentMessage('')
 
       streamingChatIdRef.current = targetChatId
 
       try {
-        const response = await sendChatMessage(personaPrompt, history, messageContent)
+        const response = await sendChatMessage(history, messageContent)
 
         if (response.ok) {
           const data = response.body
@@ -560,14 +553,13 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     [
       isChatHydrated,
       ensureActiveChat,
-      getPersonaById,
       getComposerText,
       currentChatId,
       loadingChatId,
       saveMessages,
       setConversation,
-      uploadedImages,
-      uploadedDocuments
+      uploadedDocuments,
+      accessibleDocuments
     ]
   )
 
@@ -596,8 +588,8 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       return
     }
     setConversation([], chatId)
-    setUploadedImages([])
     setUploadedDocuments([])
+    setAccessibleDocuments(new Set())
   }
 
   useEffect(() => {
@@ -651,46 +643,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     return (
       <div className="relative">
         <div className="bg-background border-border focus-within:ring-ring focus-within:border-ring has-[textarea[aria-invalid=true]]:border-destructive has-[textarea[aria-invalid=true]]:ring-destructive/20 flex flex-col rounded-2xl border shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_2px_8px_rgba(0,0,0,0.04)] transition-all duration-200 focus-within:ring-2 has-[textarea[aria-invalid=true]]:ring-2 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_2px_8px_rgba(0,0,0,0.2)]">
-          {(uploadedImages.length > 0 || uploadedDocuments.length > 0) && (
-            <div className="flex flex-wrap gap-2 px-4 pt-3">
-              {uploadedImages.map((img, index) => (
-                <div key={`img-${index}`} className="group relative">
-                  <img
-                    src={img.url}
-                    alt="Upload preview"
-                    className="border-border h-20 w-20 rounded-lg border object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    className="bg-destructive text-destructive-foreground absolute -top-2 -right-2 rounded-full p-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                    aria-label="Remove image"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-              {uploadedDocuments.map((doc, index) => (
-                <div
-                  key={`doc-${index}`}
-                  className="group border-border bg-muted relative flex items-center gap-2 rounded-lg border px-3 py-2"
-                >
-                  <FileText className="text-muted-foreground size-4 shrink-0" />
-                  <span className="max-w-[150px] truncate text-sm" title={doc.name}>
-                    {doc.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeDocument(index)}
-                    className="bg-destructive text-destructive-foreground ml-auto rounded-full p-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                    aria-label="Remove document"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
           <div className="relative flex min-h-[44px] min-w-0 flex-1 items-start px-4 pt-2 pb-1">
             <label className="sr-only" htmlFor={chatInputId}>
               Message input
@@ -699,9 +651,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
               Press Enter to send your message. Use Shift plus Enter to insert a new line.
             </p>
             {!message &&
-              !isComposerFocused &&
-              uploadedImages.length === 0 &&
-              uploadedDocuments.length === 0 && (
+              !isComposerFocused && (
                 <span className="text-foreground/50 pointer-events-none absolute top-2 left-4 text-base">
                   Ask anything
                 </span>
@@ -743,42 +693,94 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                   Clear chat
                 </Button>
               )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.heic,.heif"
-                multiple
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={isCurrentChatLoading || !isChatHydrated}
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Upload image"
-                title="Upload image"
-              >
-                <ImagePlus className="size-4" />
-              </Button>
-              <input
-                ref={documentInputRef}
-                type="file"
-                accept=".txt,.csv,.pdf,.xlsx,.xls,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                multiple
-                className="hidden"
-                onChange={handleDocumentUpload}
-              />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={isCurrentChatLoading || !isChatHydrated}
-                onClick={() => documentInputRef.current?.click()}
-                aria-label="Upload document"
-                title="Upload document (PDF, TXT, CSV, Excel)"
-              >
-                <FileText className="size-4" />
-              </Button>
+
+              {/* File Access Dropdown */}
+              <div className="relative" ref={fileAccessDropdownRef}>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={isCurrentChatLoading || !isChatHydrated}
+                    onClick={() => setFileAccessDropdownOpen((prev) => !prev)}
+                    aria-label="Toggle file access"
+                    title="Toggle file access"
+                    className={`px-3 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
+                  >
+                    <Database className="size-4" />
+                    <ChevronDown className={`size-3 transition-transform ${fileAccessDropdownOpen ? 'rotate-180' : ''}`} />
+                  </Button>
+
+                  {fileAccessDropdownOpen && (
+                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-72 rounded-lg border shadow-lg">
+                      <div className="border-border border-b px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold">Knowledge Base</h3>
+                            <p className="text-muted-foreground text-xs">{accessibleDocuments.size} of {uploadedDocuments.length} files accessible</p>
+                          </div>
+                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                            <File className="size-4" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto p-2">
+                        {uploadedDocuments.length === 0 ? (
+                          <p className="text-muted-foreground text-center py-4 text-sm">No files available</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {uploadedDocuments.map((doc, index) => {
+                              const isAccessible = accessibleDocuments.has(index)
+                              const getFileIcon = () => {
+                                const type = doc.type || ''
+                                if (type === 'json') return <FileJson className="text-amber-500 size-4" />
+                                if (type === 'pdf') return <FileText className="text-red-500 size-4" />
+                                if (type === 'csv' || type === 'xlsx' || type === 'xls') return <Database className="text-green-500 size-4" />
+                                if (type === 'sql') return <Database className="text-blue-500 size-4" />
+                                return <FileCode className="text-gray-500 size-4" />
+                              }
+                              return (
+                                <div
+                                  key={`doc-access-${index}`}
+                                  className={`group flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
+                                    isAccessible ? 'bg-accent' : 'hover:bg-muted/50'
+                                  }`}
+                                >
+                                  <div className={`shrink-0 ${isAccessible ? 'opacity-100' : 'opacity-50'}`}>
+                                    {getFileIcon()}
+                                  </div>
+                                  <span className={`text-sm truncate ${isAccessible ? 'text-foreground font-medium' : 'text-muted-foreground'}`} title={doc.name}>
+                                    {doc.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAccessibleDocuments((prev) => {
+                                        const newSet = new Set(prev)
+                                        if (newSet.has(index)) {
+                                          newSet.delete(index)
+                                        } else {
+                                          newSet.add(index)
+                                        }
+                                        return newSet
+                                      })
+                                    }}
+                                    className="ml-auto"
+                                    aria-label={isAccessible ? 'Disable access' : 'Enable access'}
+                                  >
+                                    {isAccessible ? (
+                                      <Check className="text-primary size-5" />
+                                    ) : (
+                                      <div className="border-border size-5 rounded-full border" />
+                                    )}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
             </div>
             {isCurrentChatLoading ? (
               <div

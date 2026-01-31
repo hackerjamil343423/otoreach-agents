@@ -9,10 +9,10 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'ChatGPT Lite',
-    template: `%s - ChatGPT Lite`
+    default: 'OTO Reach Agents',
+    template: `%s - OTO Reach Agents`
   },
-  description: 'AI assistant powered by ChatGPT',
+  description: 'AI assistant powered by OTO Reach Agents',
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon-16x16.png',

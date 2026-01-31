@@ -2,14 +2,9 @@
 
 import { useInsertionEffect, useMemo } from 'react'
 import { Toaster } from '@/components/ui/sonner'
-import { useAppContext } from '@/contexts/app'
-import { cacheGet } from '@/lib/cache'
 import {
   applyThemePresetStyles,
-  getInitialPresetId,
   getThemePresetCss,
-  isValidPresetId,
-  resolvePresetId as resolvePreset,
   THEME_STYLE_ELEMENT_ID
 } from '@/lib/themes'
 import { CacheKey } from '@/services/constant'
@@ -22,20 +17,10 @@ const DEFAULT_THEME_MODE: ThemeMode = isValidTheme(process.env.NEXT_PUBLIC_DEFAU
   ? (process.env.NEXT_PUBLIC_DEFAULT_THEME as ThemeMode)
   : 'light'
 
-const resolvePresetId = (current: string) => {
-  if (typeof window === 'undefined') {
-    return resolvePreset(current)
-  }
-  if (isValidPresetId(current)) {
-    return current
-  }
-  return getInitialPresetId(cacheGet(CacheKey.ThemePreset))
-}
+const PRESET_ID = 'supabase'
 
 function ThemePresetStyle() {
-  const { themePreset } = useAppContext()
-  const presetId = useMemo(() => resolvePresetId(themePreset), [themePreset])
-  const css = useMemo(() => getThemePresetCss(presetId), [presetId])
+  const css = useMemo(() => getThemePresetCss(PRESET_ID), [])
 
   return (
     <style
@@ -67,13 +52,10 @@ const ThemePresetStyleScript = () => {
 }
 
 function ThemePresetSync() {
-  const { themePreset } = useAppContext()
-  const presetId = useMemo(() => resolvePresetId(themePreset), [themePreset])
-
   useInsertionEffect(() => {
-    applyThemePresetStyles(presetId)
+    applyThemePresetStyles(PRESET_ID)
     document.documentElement.classList.remove('theme-loading')
-  }, [presetId])
+  }, [])
 
   return null
 }

@@ -13,12 +13,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAppContext } from '@/contexts/app'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { cn } from '@/lib/utils'
-import { Bot, MessageSquare, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import ChatContext from './chatContext'
 
 export const SideBar = () => {
-  const { toggleSidebar, onToggleSidebar, openPersonaPanel } = useAppContext()
+  const { toggleSidebar, onToggleSidebar } = useAppContext()
   const {
     currentChatId,
     chatList,
@@ -222,21 +222,6 @@ export const SideBar = () => {
               )}
             </div>
           </ScrollArea>
-          {/* Persona Store Button */}
-          <div className="border-border mt-auto border-t pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                openPersonaPanel()
-                dismissIfMobile()
-              }}
-              className="w-full justify-start rounded-lg"
-            >
-              <Bot className="mr-2 size-4" />
-              <span className="text-sm">Persona Store</span>
-            </Button>
-          </div>
         </div>
       </div>
     </>

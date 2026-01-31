@@ -211,7 +211,7 @@ const useChatHook = (): ChatContextValue => {
                   title:
                     previousCount === 0 &&
                     normalizedMessages.length > 0 &&
-                    (!item.persona || item.persona.id === 'chatgpt')
+                    (!item.persona || item.persona.id === 'default')
                       ? deriveTitleFromMessages(
                           normalizedMessages,
                           item.title ||
