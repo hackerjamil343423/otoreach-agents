@@ -16,17 +16,24 @@ import { Button } from '@/components/ui/button'
 import {
   AlertCircle,
   ArrowUp,
+  BarChart3,
+  Bot,
+  Briefcase,
   Check,
   ChevronDown,
+  Code,
   Database,
   Eraser,
   File,
   FileCode,
   FileJson,
   FileText,
+  Headphones,
   Loader2,
   Mic,
   MicOff,
+  PenLine,
+  Search,
   ToggleLeft,
   ToggleRight,
   X
@@ -107,13 +114,36 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   const [isListening, setIsListening] = useState(false)
   const [fileAccessDropdownOpen, setFileAccessDropdownOpen] = useState(false)
   const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set([0, 1, 3])) // Pre-select some files
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false)
+  const [selectedAgent, setSelectedAgent] = useState(0)
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const recognitionRef = useRef<any>(null)
   const fileAccessDropdownRef = useRef<HTMLDivElement | null>(null)
+  const agentDropdownRef = useRef<HTMLDivElement | null>(null)
   const isManualStopRef = useRef<boolean>(false)
   const isListeningRef = useRef<boolean>(false)
+
+  // Agent icon component map
+  const AgentIcons = {
+    briefcase: Briefcase,
+    headphones: Headphones,
+    barChart3: BarChart3,
+    code: Code,
+    penLine: PenLine,
+    search: Search,
+  } as const
+
+  // Sample agents
+  const agents = [
+    { id: 0, name: 'Sales Agent', description: 'Handles sales inquiries and product questions', icon: 'briefcase', color: 'text-blue-500' },
+    { id: 1, name: 'Support Agent', description: 'Customer support and help desk', icon: 'headphones', color: 'text-green-500' },
+    { id: 2, name: 'Data Analyst', description: 'Analyzes data and generates reports', icon: 'barChart3', color: 'text-purple-500' },
+    { id: 3, name: 'Code Assistant', description: 'Helps with coding and technical questions', icon: 'code', color: 'text-amber-500' },
+    { id: 4, name: 'Content Writer', description: 'Creates and edits content', icon: 'penLine', color: 'text-pink-500' },
+    { id: 5, name: 'Research Agent', description: 'Conducts research and gathers information', icon: 'search', color: 'text-cyan-500' },
+  ]
 
   const getComposerValue = useCallback(() => textAreaRef.current?.value ?? message ?? '', [message])
   const getComposerText = useCallback(() => getComposerValue().trim(), [getComposerValue])
@@ -237,7 +267,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
   // Initialize speech recognition
   useEffect(() => {
-    // Close dropdown when clicking outside
+    // Close dropdowns when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (
         fileAccessDropdownOpen &&
@@ -246,13 +276,20 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       ) {
         setFileAccessDropdownOpen(false)
       }
+      if (
+        agentDropdownOpen &&
+        agentDropdownRef.current &&
+        !agentDropdownRef.current.contains(event.target as Node)
+      ) {
+        setAgentDropdownOpen(false)
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [fileAccessDropdownOpen])
+  }, [fileAccessDropdownOpen, agentDropdownOpen])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -681,29 +718,82 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
           <div className={`flex items-center justify-between px-3 pb-3`}>
             <div className="flex items-center gap-2">
-              {showClear && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shadow-none"
-                  disabled={isCurrentChatLoading}
-                  onClick={clearMessages}
-                >
-                  <Eraser className="mr-2 size-4" />
-                  Clear chat
-                </Button>
-              )}
+              {/* Agent Selection Dropdown */}
+              <div className="relative" ref={agentDropdownRef}>
+                  <Button
+                    variant="ghost"
+                    disabled={isCurrentChatLoading || !isChatHydrated}
+                    onClick={() => setAgentDropdownOpen((prev) => !prev)}
+                    aria-label="Select agent"
+                    title="Select agent"
+                    className={`!px-3 !py-2 !h-9 ${agentDropdownOpen ? 'bg-accent' : ''}`}
+                  >
+                    {(() => {
+                      const IconComponent = AgentIcons[agents[selectedAgent]?.icon as keyof typeof AgentIcons] || Bot
+                      return (
+                        <>
+                          <IconComponent className={`size-4 ${agents[selectedAgent]?.color}`} />
+                          <ChevronDown className={`size-3 transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`} />
+                        </>
+                      )
+                    })()}
+                  </Button>
+
+                  {agentDropdownOpen && (
+                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
+                      <div className="border-border border-b px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold">Select Agent</h3>
+                            <p className="text-muted-foreground text-xs">Choose an AI agent</p>
+                          </div>
+                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                            <Bot className="size-4" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto p-2">
+                        <div className="space-y-1">
+                          {agents.map((agent) => {
+                            const isSelected = selectedAgent === agent.id
+                            const IconComponent = AgentIcons[agent.icon as keyof typeof AgentIcons] || Bot
+                            return (
+                              <button
+                                key={agent.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedAgent(agent.id)
+                                  setAgentDropdownOpen(false)
+                                }}
+                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-3 transition-colors text-left ${
+                                  isSelected ? 'bg-accent' : 'hover:bg-muted/50'
+                                }`}
+                              >
+                                <IconComponent className={`size-5 ${agent.color}`} />
+                                <span className={`text-sm font-medium ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                  {agent.name}
+                                </span>
+                                {isSelected && (
+                                  <Check className="text-primary ml-auto size-5 shrink-0" />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
               {/* File Access Dropdown */}
               <div className="relative" ref={fileAccessDropdownRef}>
                   <Button
-                    size="icon-sm"
                     variant="ghost"
                     disabled={isCurrentChatLoading || !isChatHydrated}
                     onClick={() => setFileAccessDropdownOpen((prev) => !prev)}
                     aria-label="Toggle file access"
                     title="Toggle file access"
-                    className={`px-3 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
+                    className={`!p-2 !h-9 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
                   >
                     <Database className="size-4" />
                     <ChevronDown className={`size-3 transition-transform ${fileAccessDropdownOpen ? 'rotate-180' : ''}`} />
