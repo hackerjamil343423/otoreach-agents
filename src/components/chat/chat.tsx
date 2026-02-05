@@ -16,27 +16,17 @@ import { Button } from '@/components/ui/button'
 import {
   AlertCircle,
   ArrowUp,
-  BarChart3,
   Bot,
-  Briefcase,
   Check,
   ChevronDown,
-  Code,
   Database,
-  Eraser,
   File,
   FileCode,
   FileJson,
   FileText,
-  Headphones,
   Loader2,
   Mic,
   MicOff,
-  PenLine,
-  Search,
-  ToggleLeft,
-  ToggleRight,
-  X
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StickToBottom } from 'use-stick-to-bottom'
@@ -44,6 +34,7 @@ import { StickToBottom } from 'use-stick-to-bottom'
 import ChatContext from './chatContext'
 import type { ChatMessage, MessageContent } from './interface'
 import { Message } from './message'
+import { usePersonaContext } from './personaContext'
 
 export interface ChatRef {
   setConversation: (messages: ChatMessage[], chatId?: string | null) => void
@@ -51,25 +42,42 @@ export interface ChatRef {
   focus: () => void
 }
 
-const toMessagePayload = (messages: ChatMessage[]) =>
-  messages.map(({ role, content }) => ({ role, content }))
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token')
+  const user = localStorage.getItem('user')
 
-const sendChatMessage = async (
-  messages: ChatMessage[],
-  input: MessageContent
-) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  } else if (user) {
+    try {
+      const userData = JSON.parse(user)
+      if (userData.email) {
+        headers['x-user-email'] = userData.email
+      }
+    } catch {
+      // Invalid user data
+    }
+  }
+
+  return headers
+}
+
+const sendChatMessage = async (input: MessageContent, agentId?: string, chatId?: string) => {
   const url = '/api/chat'
 
   const data = {
-    messages: toMessagePayload(messages),
-    input
+    input,
+    agentId,
+    chatId
   }
 
   return await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(data)
   })
 }
@@ -85,6 +93,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     getChatById,
     onCreateDefaultChat
   } = useContext(ChatContext)
+  const { personas: agents } = usePersonaContext()
 
   const [loadingChatId, setLoadingChatId] = useState<string | null>(null)
   const [composerError, setComposerError] = useState<string | null>(null)
@@ -97,17 +106,64 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       name: string
       content: string
       mimeType: string
-      images?: Array<{ pageNumber: number; name: string; width: number; height: number; dataUrl: string }>
+      images?: Array<{
+        pageNumber: number
+        name: string
+        width: number
+        height: number
+        dataUrl: string
+      }>
       size?: string
       type?: string
     }>
   >([
-    { name: 'product_catalog.json', content: '{"products": [{"id": 1, "name": "Laptop", "price": 999}, {"id": 2, "name": "Mouse", "price": 29}]}', mimeType: 'application/json', size: '2.4 KB', type: 'json' },
-    { name: 'company_policies.pdf', content: 'Employee Handbook 2024\n\n1. Working Hours\n2. Leave Policy\n3. Remote Work Guidelines', mimeType: 'application/pdf', size: '156 KB', type: 'pdf' },
-    { name: 'customer_data.csv', content: 'id,name,email,plan\n1,John Doe,john@example.com,premium\n2,Jane Smith,jane@example.com,basic', mimeType: 'text/csv', size: '128 KB', type: 'csv' },
-    { name: 'api_docs.txt', content: 'API Documentation\n\nGET /api/users - List all users\nPOST /api/users - Create user\nPUT /api/users/:id - Update user\nDELETE /api/users/:id - Delete user', mimeType: 'text/plain', size: '456 B', type: 'txt' },
-    { name: 'sales_report.xlsx', content: 'Q1 Sales: $125,000\nQ2 Sales: $143,000\nQ3 Sales: $167,000\nQ4 Sales: $198,000', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: '89 KB', type: 'xlsx' },
-    { name: 'database_schema.sql', content: 'CREATE TABLE users (\n  id INT PRIMARY KEY,\n  name VARCHAR(100),\n  email VARCHAR(100) UNIQUE\n);', mimeType: 'text/plain', size: '1.2 KB', type: 'sql' },
+    {
+      name: 'product_catalog.json',
+      content:
+        '{"products": [{"id": 1, "name": "Laptop", "price": 999}, {"id": 2, "name": "Mouse", "price": 29}]}',
+      mimeType: 'application/json',
+      size: '2.4 KB',
+      type: 'json'
+    },
+    {
+      name: 'company_policies.pdf',
+      content:
+        'Employee Handbook 2024\n\n1. Working Hours\n2. Leave Policy\n3. Remote Work Guidelines',
+      mimeType: 'application/pdf',
+      size: '156 KB',
+      type: 'pdf'
+    },
+    {
+      name: 'customer_data.csv',
+      content:
+        'id,name,email,plan\n1,John Doe,john@example.com,premium\n2,Jane Smith,jane@example.com,basic',
+      mimeType: 'text/csv',
+      size: '128 KB',
+      type: 'csv'
+    },
+    {
+      name: 'api_docs.txt',
+      content:
+        'API Documentation\n\nGET /api/users - List all users\nPOST /api/users - Create user\nPUT /api/users/:id - Update user\nDELETE /api/users/:id - Delete user',
+      mimeType: 'text/plain',
+      size: '456 B',
+      type: 'txt'
+    },
+    {
+      name: 'sales_report.xlsx',
+      content: 'Q1 Sales: $125,000\nQ2 Sales: $143,000\nQ3 Sales: $167,000\nQ4 Sales: $198,000',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      size: '89 KB',
+      type: 'xlsx'
+    },
+    {
+      name: 'database_schema.sql',
+      content:
+        'CREATE TABLE users (\n  id INT PRIMARY KEY,\n  name VARCHAR(100),\n  email VARCHAR(100) UNIQUE\n);',
+      mimeType: 'text/plain',
+      size: '1.2 KB',
+      type: 'sql'
+    }
   ])
 
   const [currentMessage, setCurrentMessage] = useState<string>('')
@@ -115,35 +171,14 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   const [fileAccessDropdownOpen, setFileAccessDropdownOpen] = useState(false)
   const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set([0, 1, 3])) // Pre-select some files
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false)
-  const [selectedAgent, setSelectedAgent] = useState(0)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
-  const documentInputRef = useRef<HTMLInputElement | null>(null)
   const recognitionRef = useRef<any>(null)
   const fileAccessDropdownRef = useRef<HTMLDivElement | null>(null)
   const agentDropdownRef = useRef<HTMLDivElement | null>(null)
   const isManualStopRef = useRef<boolean>(false)
   const isListeningRef = useRef<boolean>(false)
-
-  // Agent icon component map
-  const AgentIcons = {
-    briefcase: Briefcase,
-    headphones: Headphones,
-    barChart3: BarChart3,
-    code: Code,
-    penLine: PenLine,
-    search: Search,
-  } as const
-
-  // Sample agents
-  const agents = [
-    { id: 0, name: 'Sales Agent', description: 'Handles sales inquiries and product questions', icon: 'briefcase', color: 'text-blue-500' },
-    { id: 1, name: 'Support Agent', description: 'Customer support and help desk', icon: 'headphones', color: 'text-green-500' },
-    { id: 2, name: 'Data Analyst', description: 'Analyzes data and generates reports', icon: 'barChart3', color: 'text-purple-500' },
-    { id: 3, name: 'Code Assistant', description: 'Helps with coding and technical questions', icon: 'code', color: 'text-amber-500' },
-    { id: 4, name: 'Content Writer', description: 'Creates and edits content', icon: 'penLine', color: 'text-pink-500' },
-    { id: 5, name: 'Research Agent', description: 'Conducts research and gathers information', icon: 'search', color: 'text-cyan-500' },
-  ]
 
   const getComposerValue = useCallback(() => textAreaRef.current?.value ?? message ?? '', [message])
   const getComposerText = useCallback(() => getComposerValue().trim(), [getComposerValue])
@@ -184,86 +219,19 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   const textareaClassName =
     'text-foreground w-full min-w-0 resize-none !border-0 !bg-transparent text-base leading-relaxed break-all !outline-none !shadow-none focus:!outline-none focus:!border-0 focus:!ring-0 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 max-h-[200px] min-h-[24px] overflow-y-auto [field-sizing:content]'
 
-  const ensureActiveChat = useCallback(() => {
+  const ensureActiveChat = useCallback(async () => {
     const targetId = conversationChatIdRef.current ?? currentChatId ?? null
     const chat = getChatById(targetId)
     if (chat) {
       conversationChatIdRef.current = chat.id
       return chat
     }
-    const created = onCreateDefaultChat?.()
+    const created = await onCreateDefaultChat?.()
     if (created) {
       conversationChatIdRef.current = created.id
     }
     return created ?? undefined
   }, [currentChatId, getChatById, onCreateDefaultChat])
-
-  const handleDocumentUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    for (const file of Array.from(files)) {
-      const fileType = file.type.toLowerCase()
-      const fileName = file.name.toLowerCase()
-
-      // Check if it's a supported document type
-      const isSupported =
-        fileType === 'text/plain' ||
-        fileType === 'text/csv' ||
-        fileType === 'application/pdf' ||
-        fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        fileType === 'application/vnd.ms-excel' ||
-        fileName.endsWith('.txt') ||
-        fileName.endsWith('.csv') ||
-        fileName.endsWith('.pdf') ||
-        fileName.endsWith('.xlsx') ||
-        fileName.endsWith('.xls')
-
-      if (!isSupported) {
-        toast.error(`Unsupported file type: ${file.name}`)
-        continue
-      }
-
-      try {
-        // Dynamically import the file parser
-        const { parseFile } = await import('@/lib/fileParser')
-        const parsed = await parseFile(file)
-
-        setUploadedDocuments((prev) => {
-          const newIndex = prev.length
-          setAccessibleDocuments((prev) => new Set(prev).add(newIndex))
-          return [...prev, parsed]
-        })
-        toast.success(`File "${file.name}" uploaded successfully`)
-      } catch (error) {
-        console.error('Error parsing file:', error)
-        toast.error(`Failed to parse file: ${file.name}`)
-      }
-    }
-
-    if (documentInputRef.current) {
-      documentInputRef.current.value = ''
-    }
-  }, [])
-
-  const removeDocument = useCallback((index: number) => {
-    setUploadedDocuments((prev) => {
-      const filtered = prev.filter((_, i) => i !== index)
-      // Update accessible indices - remove the index and shift higher indices down
-      setAccessibleDocuments((prevSet) => {
-        const newSet = new Set<number>()
-        prevSet.forEach((i) => {
-          if (i < index) {
-            newSet.add(i)
-          } else if (i > index) {
-            newSet.add(i - 1)
-          }
-        })
-        return newSet
-      })
-      return filtered
-    })
-  }, [])
 
   // Initialize speech recognition
   useEffect(() => {
@@ -302,15 +270,12 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
         recognition.lang = 'zh-CN' // Set to Chinese, you can make this configurable
 
         recognition.onresult = (event: any) => {
-          let interimTranscript = ''
           let finalTranscript = ''
 
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript
             if (event.results[i].isFinal) {
               finalTranscript += transcript
-            } else {
-              interimTranscript += transcript
             }
           }
 
@@ -331,10 +296,8 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
           } else if (event.error === 'no-speech') {
             // Don't show error for no-speech - it's common during pauses
             // The recognition will auto-restart via onend handler
-            console.log('No speech detected, will auto-restart if still listening')
           } else if (event.error === 'aborted') {
             // Manual abort, don't show error
-            console.log('Speech recognition aborted')
           } else {
             setIsListening(false)
             isListeningRef.current = false
@@ -357,7 +320,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
           if (isListeningRef.current) {
             try {
               recognition.start()
-              console.log('Auto-restarting speech recognition')
             } catch (error) {
               console.error('Failed to auto-restart speech recognition:', error)
               setIsListening(false)
@@ -435,7 +397,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
         return
       }
 
-      const activeChat = ensureActiveChat()
+      const activeChat = await ensureActiveChat()
       if (!activeChat) {
         setComposerError('Setting up your chat. Please wait a moment.')
         return
@@ -444,7 +406,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       const targetChatId = activeChat.id
       activeChatIdRef.current = targetChatId
       const history = [...conversationRef.current]
-      const personaPrompt = ''
       // Build message content with text and documents
       let messageContent: MessageContent = input
       if (uploadedDocuments.length > 0) {
@@ -500,7 +461,11 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       streamingChatIdRef.current = targetChatId
 
       try {
-        const response = await sendChatMessage(history, messageContent)
+        const response = await sendChatMessage(
+          messageContent,
+          selectedAgentId || undefined,
+          targetChatId
+        )
 
         if (response.ok) {
           const data = response.body
@@ -596,7 +561,8 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       saveMessages,
       setConversation,
       uploadedDocuments,
-      accessibleDocuments
+      accessibleDocuments,
+      selectedAgentId
     ]
   )
 
@@ -618,16 +584,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     },
     [getComposerText, isChatHydrated, isComposing, isCurrentChatLoading, sendMessage]
   )
-
-  const clearMessages = () => {
-    const chatId = currentChatId ?? null
-    if (isCurrentChatLoading) {
-      return
-    }
-    setConversation([], chatId)
-    setUploadedDocuments([])
-    setAccessibleDocuments(new Set())
-  }
 
   useEffect(() => {
     if (currentChatId) {
@@ -674,9 +630,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     }
   }, [isCurrentChatLoading])
 
-  const renderComposer = (showClear?: boolean) => {
-    const actionAlignment = showClear ? 'justify-between' : 'justify-end'
-
+  const renderComposer = () => {
     return (
       <div className="relative">
         <div className="bg-background border-border focus-within:ring-ring focus-within:border-ring has-[textarea[aria-invalid=true]]:border-destructive has-[textarea[aria-invalid=true]]:ring-destructive/20 flex flex-col rounded-2xl border shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_2px_8px_rgba(0,0,0,0.04)] transition-all duration-200 focus-within:ring-2 has-[textarea[aria-invalid=true]]:ring-2 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_2px_8px_rgba(0,0,0,0.2)]">
@@ -687,12 +641,11 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
             <p id={helperTextId} className="sr-only">
               Press Enter to send your message. Use Shift plus Enter to insert a new line.
             </p>
-            {!message &&
-              !isComposerFocused && (
-                <span className="text-foreground/50 pointer-events-none absolute top-2 left-4 text-base">
-                  Ask anything
-                </span>
-              )}
+            {!message && !isComposerFocused && (
+              <span className="text-foreground/50 pointer-events-none absolute top-2 left-4 text-base">
+                Ask anything
+              </span>
+            )}
             <textarea
               ref={textAreaRef}
               rows={1}
@@ -720,57 +673,68 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
             <div className="flex items-center gap-2">
               {/* Agent Selection Dropdown */}
               <div className="relative" ref={agentDropdownRef}>
-                  <Button
-                    variant="ghost"
-                    disabled={isCurrentChatLoading || !isChatHydrated}
-                    onClick={() => setAgentDropdownOpen((prev) => !prev)}
-                    aria-label="Select agent"
-                    title="Select agent"
-                    className={`!px-3 !py-2 !h-9 ${agentDropdownOpen ? 'bg-accent' : ''}`}
-                  >
-                    {(() => {
-                      const IconComponent = AgentIcons[agents[selectedAgent]?.icon as keyof typeof AgentIcons] || Bot
-                      return (
-                        <>
-                          <IconComponent className={`size-4 ${agents[selectedAgent]?.color}`} />
-                          <ChevronDown className={`size-3 transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`} />
-                        </>
-                      )
-                    })()}
-                  </Button>
+                <Button
+                  variant="ghost"
+                  disabled={isCurrentChatLoading || !isChatHydrated}
+                  onClick={() => setAgentDropdownOpen((prev) => !prev)}
+                  aria-label="Select agent"
+                  title="Select agent"
+                  className={`!h-9 !px-3 !py-2 ${agentDropdownOpen ? 'bg-accent' : ''}`}
+                >
+                  {(() => {
+                    const selectedAgent = agents.find((a) => a.id === selectedAgentId)
+                    return (
+                      <>
+                        <Bot className="size-4" />
+                        <span className="ml-2 text-sm">
+                          {selectedAgent?.name || 'Select Agent'}
+                        </span>
+                        <ChevronDown
+                          className={`size-3 transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`}
+                        />
+                      </>
+                    )
+                  })()}
+                </Button>
 
-                  {agentDropdownOpen && (
-                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
-                      <div className="border-border border-b px-4 py-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-sm font-semibold">Select Agent</h3>
-                            <p className="text-muted-foreground text-xs">Choose an AI agent</p>
-                          </div>
-                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
-                            <Bot className="size-4" />
-                          </div>
+                {agentDropdownOpen && (
+                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
+                    <div className="border-border border-b px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold">Select Agent</h3>
+                          <p className="text-muted-foreground text-xs">Choose an AI agent</p>
+                        </div>
+                        <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                          <Bot className="size-4" />
                         </div>
                       </div>
-                      <div className="max-h-80 overflow-y-auto p-2">
+                    </div>
+                    <div className="max-h-80 overflow-y-auto p-2">
+                      {agents.length === 0 ? (
+                        <p className="text-muted-foreground py-4 text-center text-sm">
+                          No agents assigned
+                        </p>
+                      ) : (
                         <div className="space-y-1">
                           {agents.map((agent) => {
-                            const isSelected = selectedAgent === agent.id
-                            const IconComponent = AgentIcons[agent.icon as keyof typeof AgentIcons] || Bot
+                            const isSelected = selectedAgentId === agent.id
                             return (
                               <button
                                 key={agent.id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedAgent(agent.id)
+                                  setSelectedAgentId(agent.id || null)
                                   setAgentDropdownOpen(false)
                                 }}
-                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-3 transition-colors text-left ${
+                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-3 text-left transition-colors ${
                                   isSelected ? 'bg-accent' : 'hover:bg-muted/50'
                                 }`}
                               >
-                                <IconComponent className={`size-5 ${agent.color}`} />
-                                <span className={`text-sm font-medium ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                <Bot className="size-5" />
+                                <span
+                                  className={`text-sm font-medium ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                                >
                                   {agent.name}
                                 </span>
                                 {isSelected && (
@@ -780,97 +744,114 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                             )
                           })}
                         </div>
-                      </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+              </div>
 
               {/* File Access Dropdown */}
               <div className="relative" ref={fileAccessDropdownRef}>
-                  <Button
-                    variant="ghost"
-                    disabled={isCurrentChatLoading || !isChatHydrated}
-                    onClick={() => setFileAccessDropdownOpen((prev) => !prev)}
-                    aria-label="Toggle file access"
-                    title="Toggle file access"
-                    className={`!p-2 !h-9 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
-                  >
-                    <Database className="size-4" />
-                    <ChevronDown className={`size-3 transition-transform ${fileAccessDropdownOpen ? 'rotate-180' : ''}`} />
-                  </Button>
+                <Button
+                  variant="ghost"
+                  disabled={isCurrentChatLoading || !isChatHydrated}
+                  onClick={() => setFileAccessDropdownOpen((prev) => !prev)}
+                  aria-label="Toggle file access"
+                  title="Toggle file access"
+                  className={`!h-9 !p-2 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
+                >
+                  <Database className="size-4" />
+                  <ChevronDown
+                    className={`size-3 transition-transform ${fileAccessDropdownOpen ? 'rotate-180' : ''}`}
+                  />
+                </Button>
 
-                  {fileAccessDropdownOpen && (
-                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-72 rounded-lg border shadow-lg">
-                      <div className="border-border border-b px-4 py-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-sm font-semibold">Knowledge Base</h3>
-                            <p className="text-muted-foreground text-xs">{accessibleDocuments.size} of {uploadedDocuments.length} files accessible</p>
-                          </div>
-                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
-                            <File className="size-4" />
-                          </div>
+                {fileAccessDropdownOpen && (
+                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-72 rounded-lg border shadow-lg">
+                    <div className="border-border border-b px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold">Knowledge Base</h3>
+                          <p className="text-muted-foreground text-xs">
+                            {accessibleDocuments.size} of {uploadedDocuments.length} files
+                            accessible
+                          </p>
+                        </div>
+                        <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                          <File className="size-4" />
                         </div>
                       </div>
-                      <div className="max-h-80 overflow-y-auto p-2">
-                        {uploadedDocuments.length === 0 ? (
-                          <p className="text-muted-foreground text-center py-4 text-sm">No files available</p>
-                        ) : (
-                          <div className="space-y-1">
-                            {uploadedDocuments.map((doc, index) => {
-                              const isAccessible = accessibleDocuments.has(index)
-                              const getFileIcon = () => {
-                                const type = doc.type || ''
-                                if (type === 'json') return <FileJson className="text-amber-500 size-4" />
-                                if (type === 'pdf') return <FileText className="text-red-500 size-4" />
-                                if (type === 'csv' || type === 'xlsx' || type === 'xls') return <Database className="text-green-500 size-4" />
-                                if (type === 'sql') return <Database className="text-blue-500 size-4" />
-                                return <FileCode className="text-gray-500 size-4" />
-                              }
-                              return (
-                                <div
-                                  key={`doc-access-${index}`}
-                                  className={`group flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
-                                    isAccessible ? 'bg-accent' : 'hover:bg-muted/50'
-                                  }`}
-                                >
-                                  <div className={`shrink-0 ${isAccessible ? 'opacity-100' : 'opacity-50'}`}>
-                                    {getFileIcon()}
-                                  </div>
-                                  <span className={`text-sm truncate ${isAccessible ? 'text-foreground font-medium' : 'text-muted-foreground'}`} title={doc.name}>
-                                    {doc.name}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setAccessibleDocuments((prev) => {
-                                        const newSet = new Set(prev)
-                                        if (newSet.has(index)) {
-                                          newSet.delete(index)
-                                        } else {
-                                          newSet.add(index)
-                                        }
-                                        return newSet
-                                      })
-                                    }}
-                                    className="ml-auto"
-                                    aria-label={isAccessible ? 'Disable access' : 'Enable access'}
-                                  >
-                                    {isAccessible ? (
-                                      <Check className="text-primary size-5" />
-                                    ) : (
-                                      <div className="border-border size-5 rounded-full border" />
-                                    )}
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  )}
-                </div>
+                    <div className="max-h-80 overflow-y-auto p-2">
+                      {uploadedDocuments.length === 0 ? (
+                        <p className="text-muted-foreground py-4 text-center text-sm">
+                          No files available
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {uploadedDocuments.map((doc, index) => {
+                            const isAccessible = accessibleDocuments.has(index)
+                            const getFileIcon = () => {
+                              const type = doc.type || ''
+                              if (type === 'json')
+                                return <FileJson className="size-4 text-amber-500" />
+                              if (type === 'pdf')
+                                return <FileText className="size-4 text-red-500" />
+                              if (type === 'csv' || type === 'xlsx' || type === 'xls')
+                                return <Database className="size-4 text-green-500" />
+                              if (type === 'sql')
+                                return <Database className="size-4 text-blue-500" />
+                              return <FileCode className="size-4 text-gray-500" />
+                            }
+                            return (
+                              <div
+                                key={`doc-access-${index}`}
+                                className={`group flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
+                                  isAccessible ? 'bg-accent' : 'hover:bg-muted/50'
+                                }`}
+                              >
+                                <div
+                                  className={`shrink-0 ${isAccessible ? 'opacity-100' : 'opacity-50'}`}
+                                >
+                                  {getFileIcon()}
+                                </div>
+                                <span
+                                  className={`truncate text-sm ${isAccessible ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
+                                  title={doc.name}
+                                >
+                                  {doc.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAccessibleDocuments((prev) => {
+                                      const newSet = new Set(prev)
+                                      if (newSet.has(index)) {
+                                        newSet.delete(index)
+                                      } else {
+                                        newSet.add(index)
+                                      }
+                                      return newSet
+                                    })
+                                  }}
+                                  className="ml-auto"
+                                  aria-label={isAccessible ? 'Disable access' : 'Enable access'}
+                                >
+                                  {isAccessible ? (
+                                    <Check className="text-primary size-5" />
+                                  ) : (
+                                    <div className="border-border size-5 rounded-full border" />
+                                  )}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {isCurrentChatLoading ? (
               <div
@@ -987,7 +968,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
           {conversation.length > 0 && (
             <div className="bg-background sticky bottom-0 mt-auto">
               <div className="@container/chat mx-auto w-full max-w-5xl px-4 pt-0 pb-2 md:px-6 lg:px-8">
-                {renderComposer(true)}
+                {renderComposer()}
               </div>
             </div>
           )}

@@ -10,8 +10,6 @@ import {
   useState
 } from 'react'
 import { useAppContext } from '@/contexts/app'
-import { cacheGetJson, cacheSet } from '@/lib/cache'
-import { v4 as uuid } from 'uuid'
 
 import type { Persona } from './interface'
 import { DefaultPersona, DefaultPersonas } from './utils'
@@ -27,9 +25,8 @@ type PersonaContextValue = {
   savePersona: (values: { id?: string; name: string; prompt: string }) => void
   deletePersona: (persona: Persona) => void
   getPersonaById: (id: string) => Persona | undefined
+  refreshPersonas: () => Promise<void>
 }
-
-const PERSONAS_STORAGE_KEY = 'Personas'
 
 const PersonaContext = createContext<PersonaContextValue | null>(null)
 
@@ -47,23 +44,48 @@ export const PersonaProvider = ({ children }: { children: ReactNode }) => {
     openPersonaModal: openPersonaModalFromApp,
     closePersonaModal: closePersonaModalFromApp
   } = useAppContext()
-  const [personas, setPersonas] = useState<Persona[]>(() => {
-    const stored = cacheGetJson<Persona[]>(PERSONAS_STORAGE_KEY, [])
-    return stored.map((persona) => {
-      if (!persona.id) {
-        return {
-          ...persona,
-          id: uuid()
-        }
-      }
-      return persona
-    })
-  })
+  const [personas, setPersonas] = useState<Persona[]>([])
+  const [loading, setLoading] = useState(true)
   const [editPersona, setEditPersona] = useState<Persona | undefined>(undefined)
 
+  // Fetch user's assigned agents from database
+  const refreshPersonas = useCallback(async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/user/agents')
+      if (response.ok) {
+        const data = await response.json()
+        // Convert database agents to persona format
+        const agents: Persona[] = (data.agents || []).map(
+          (agent: {
+            id: string
+            name: string
+            system_prompt: string
+            webhook_url?: string
+            is_default?: boolean
+          }) => ({
+            id: agent.id,
+            role: 'system' as const,
+            name: agent.name,
+            prompt: agent.system_prompt,
+            webhookUrl: agent.webhook_url,
+            isDefault: agent.is_default
+          })
+        )
+        setPersonas(agents)
+      }
+    } catch (error) {
+      console.error('Failed to fetch agents:', error)
+      setPersonas([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Fetch agents on mount
   useEffect(() => {
-    cacheSet(PERSONAS_STORAGE_KEY, JSON.stringify(personas))
-  }, [personas])
+    refreshPersonas()
+  }, [refreshPersonas])
 
   const closePersonaModal = useCallback(() => {
     setEditPersona(undefined)
@@ -83,28 +105,20 @@ export const PersonaProvider = ({ children }: { children: ReactNode }) => {
     [openPersonaModalFromApp]
   )
 
+  // Note: savePersona and deletePersona are disabled for database agents
+  // Agents can only be managed via admin panel
   const savePersona = useCallback(
-    ({ id, name, prompt }: { id?: string; name: string; prompt: string }) => {
-      if (id) {
-        setPersonas((prev) =>
-          prev.map((item) => (item.id === id ? { ...item, name, prompt } : item))
-        )
-      } else {
-        const persona: Persona = {
-          id: uuid(),
-          role: 'system',
-          name,
-          prompt
-        }
-        setPersonas((prev) => [...prev, persona])
-      }
+    () => {
+      // This would be for future custom personas - for now just close
+      console.warn('savePersona called but custom personas are read-only')
       closePersonaModal()
     },
     [closePersonaModal]
   )
 
-  const deletePersona = useCallback((persona: Persona) => {
-    setPersonas((prev) => prev.filter((item) => item.id !== persona.id))
+  const deletePersona = useCallback(() => {
+    // This would be for future custom personas - for now just close
+    console.warn('deletePersona called but custom personas are read-only')
   }, [])
 
   const getPersonaById = useCallback(
@@ -120,7 +134,7 @@ export const PersonaProvider = ({ children }: { children: ReactNode }) => {
   const value = useMemo<PersonaContextValue>(
     () => ({
       defaultPersonas: DefaultPersonas,
-      personas,
+      personas: loading ? [] : personas,
       editPersona,
       isPersonaModalOpen: personaModalOpen,
       openCreatePersonaModal,
@@ -128,18 +142,21 @@ export const PersonaProvider = ({ children }: { children: ReactNode }) => {
       closePersonaModal,
       savePersona,
       deletePersona,
-      getPersonaById
+      getPersonaById,
+      refreshPersonas
     }),
     [
       deletePersona,
       editPersona,
       getPersonaById,
+      loading,
       openCreatePersonaModal,
       openEditPersonaModal,
       closePersonaModal,
       personaModalOpen,
       personas,
-      savePersona
+      savePersona,
+      refreshPersonas
     ]
   )
 

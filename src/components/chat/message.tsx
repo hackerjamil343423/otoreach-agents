@@ -4,48 +4,12 @@ import { memo, useCallback, useDeferredValue } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
-import { Check, Copy, FileText } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 
 import { ChatMessage, MessageContent } from './interface'
 
 export interface MessageProps {
   message: ChatMessage
-}
-
-const renderContent = (content: MessageContent) => {
-  if (typeof content === 'string') {
-    return content
-  }
-
-  return content.map((part, index) => {
-    if (part.type === 'text') {
-      return <span key={index}>{part.text}</span>
-    } else if (part.type === 'image') {
-      return (
-        <img
-          key={index}
-          src={part.image}
-          alt="Uploaded"
-          className="max-w-full rounded-lg mt-2"
-          style={{ maxHeight: '300px' }}
-        />
-      )
-    } else if (part.type === 'document') {
-      return (
-        <div key={index} className="mt-2 p-3 rounded-lg border border-border bg-muted/50">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="size-4 text-muted-foreground" />
-            <span className="text-sm font-medium">{part.name}</span>
-          </div>
-          <div className="text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap">
-            {part.content.slice(0, 500)}
-            {part.content.length > 500 && '...'}
-          </div>
-        </div>
-      )
-    }
-    return null
-  })
 }
 
 const getTextContent = (content: MessageContent): string => {
@@ -79,10 +43,16 @@ const MessageComponent = (props: MessageProps) => {
           }`}
         >
           {isUser ? (
-            <div className="leading-relaxed whitespace-pre-wrap">{renderContent(content)}</div>
+            <div className="leading-relaxed whitespace-pre-wrap">
+              {typeof content === 'string' ? content : getTextContent(content)}
+            </div>
           ) : (
             <div className="leading-relaxed">
-              <Markdown>{typeof deferredContent === 'string' ? deferredContent : getTextContent(deferredContent)}</Markdown>
+              <Markdown>
+                {typeof deferredContent === 'string'
+                  ? deferredContent
+                  : getTextContent(deferredContent)}
+              </Markdown>
             </div>
           )}
         </div>
