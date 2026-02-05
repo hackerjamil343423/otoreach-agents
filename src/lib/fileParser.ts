@@ -1,7 +1,6 @@
 'use client'
 
 import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
 
 // File size limit: 10MB
 const MAX_PDF_SIZE = 10 * 1024 * 1024 // 10MB in bytes
@@ -116,43 +115,6 @@ export const parseCSV = async (file: File): Promise<ParsedFile> => {
   })
 }
 
-// Parse Excel file
-export const parseExcel = async (file: File): Promise<ParsedFile> => {
-  const arrayBuffer = await file.arrayBuffer()
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-
-  let content = `[Excel File: ${file.name}]\n\n`
-
-  // Process each sheet
-  workbook.SheetNames.forEach((sheetName, index) => {
-    const worksheet = workbook.Sheets[sheetName]
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
-
-    content += `Sheet: ${sheetName}\n`
-    content += '-'.repeat(50) + '\n'
-
-    // Convert to text format
-    jsonData.forEach((row: any, rowIndex) => {
-      if (Array.isArray(row)) {
-        content += row.join(' | ') + '\n'
-        if (rowIndex === 0) {
-          content += '-'.repeat(50) + '\n'
-        }
-      }
-    })
-
-    if (index < workbook.SheetNames.length - 1) {
-      content += '\n'
-    }
-  })
-
-  return {
-    name: file.name,
-    content,
-    mimeType: file.type
-  }
-}
-
 // Main file parser function
 export const parseFile = async (file: File): Promise<ParsedFile> => {
   const fileType = file.type.toLowerCase()
@@ -169,7 +131,7 @@ export const parseFile = async (file: File): Promise<ParsedFile> => {
     fileName.endsWith('.xlsx') ||
     fileName.endsWith('.xls')
   ) {
-    return parseExcel(file)
+    throw new Error('Excel parsing is temporarily disabled. Convert the file to CSV and try again.')
   } else if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
     return parsePDF(file)
   } else {
