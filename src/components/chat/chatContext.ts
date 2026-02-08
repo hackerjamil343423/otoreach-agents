@@ -14,8 +14,8 @@ type ChatContextValue = {
   getChatById: (id?: string | null) => Chat | undefined
   updateChatTitle: (id: string, title: string) => void
   onDeleteChat: (chat: Chat) => void
-  onCreateChat: (persona: Persona, firstMessage?: string) => Chat | undefined
-  onCreateDefaultChat: (firstMessage?: string) => Chat | undefined
+  onCreateChat: (persona: Persona, firstMessage?: string) => Promise<Chat | undefined>
+  onCreateDefaultChat: (firstMessage?: string) => Promise<Chat | undefined>
   onChangeChat: (chat: Chat) => void
   saveMessages: (messages: ChatMessage[], chatId?: string, options?: { chat?: Chat }) => void
 }
@@ -28,8 +28,8 @@ const ChatContext = createContext<ChatContextValue>({
   getChatById: () => undefined,
   updateChatTitle: () => {},
   onDeleteChat: () => {},
-  onCreateChat: () => undefined,
-  onCreateDefaultChat: () => undefined,
+  onCreateChat: async () => undefined,
+  onCreateDefaultChat: async () => undefined,
   onChangeChat: () => {},
   saveMessages: () => {}
 })

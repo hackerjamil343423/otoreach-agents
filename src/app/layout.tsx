@@ -2,6 +2,7 @@ import { Metadata } from 'next'
 import { Header } from '@/components/header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppContextProvider } from '@/contexts/app'
+import { AuthProvider } from '@/contexts/auth'
 import { ThemeProvider } from '@/providers/ThemesProvider'
 import { Analytics } from '@vercel/analytics/react'
 
@@ -24,16 +25,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning className="h-full">
       <body className="h-full overflow-hidden text-sm antialiased">
-        <AppContextProvider>
-          <ThemeProvider>
-            <TooltipProvider>
-              <main className="bg-background text-foreground flex h-full flex-1 flex-col">
-                <Header />
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
-              </main>
-            </TooltipProvider>
-          </ThemeProvider>
-        </AppContextProvider>
+        <AuthProvider>
+          <AppContextProvider>
+            <ThemeProvider>
+              <TooltipProvider>
+                <main className="bg-background text-foreground flex h-full flex-1 flex-col">
+                  <Header />
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+                </main>
+              </TooltipProvider>
+            </ThemeProvider>
+          </AppContextProvider>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

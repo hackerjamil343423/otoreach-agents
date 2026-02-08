@@ -18,10 +18,13 @@ export interface Persona {
   role: ChatRole
   name?: string
   prompt?: string
+  webhookUrl?: string | null
+  isDefault?: boolean
 }
 
 export interface Chat {
   id: string
+  sessionId?: string
   createdAt: string
   updatedAt: string
   title: string

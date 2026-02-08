@@ -76,7 +76,7 @@ const getThemePreset = (presetId?: string): ThemePreset => {
   if (presetId && themePresets[presetId]) {
     return themePresets[presetId]
   }
-  return themePresets[DEFAULT_THEME_PRESET]
+  return themePresets[DEFAULT_THEME_PRESET] || Object.values(themePresets)[0]!
 }
 
 export const getThemePresetCss = (presetId?: string) => {

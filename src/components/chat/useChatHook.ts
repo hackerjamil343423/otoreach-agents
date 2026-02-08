@@ -1,39 +1,40 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DefaultPersona, ensureMessageIds } from '@/components/chat/utils'
-import { cacheGet, cacheGetJson, cacheRemove, cacheSet } from '@/lib/cache'
+import { ensureMessageIds } from '@/components/chat/utils'
 import { v4 as uuid } from 'uuid'
 
 import { ChatRef } from './chat'
 import type { ChatContextValue } from './chatContext'
 import { Chat, ChatMessage, MessageContent, Persona } from './interface'
 
-const STORAGE_KEYS = {
-  chatList: 'chatList',
-  chatCurrentId: 'chatCurrentID'
-} as const
-
-const normalizeChatList = (list: Chat[]) => {
-  const seen = new Set<string>()
-  const now = new Date().toISOString()
-  const result: Chat[] = []
-
-  for (const chat of list) {
-    if (!chat?.id || seen.has(chat.id)) continue
-    seen.add(chat.id)
-
-    const createdAt = chat.createdAt ?? now
-    const updatedAt = chat.updatedAt ?? createdAt
-    const title = chat.title || chat.persona?.name || 'New Chat'
-    result.push({ ...chat, createdAt, updatedAt, title })
-  }
-
-  return result
+const DefaultPersona: Persona = {
+  id: 'default',
+  role: 'assistant',
+  name: 'ChatGPT',
+  prompt: 'You are a helpful AI assistant.',
+  isDefault: true
 }
 
-const sortChatsByRecent = (list: Chat[]) =>
-  [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token')
+  const user = localStorage.getItem('user')
+
+  const headers: Record<string, string> = {}
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  } else if (user) {
+    try {
+      const userData = JSON.parse(user)
+      headers['x-user-email'] = userData.email || ''
+    } catch {
+      // Invalid user data
+    }
+  }
+
+  return headers
+}
 
 const truncateToWords = (text: string, maxWords: number) => {
   const words = text.split(/\s+/).slice(0, maxWords)
@@ -76,40 +77,14 @@ const loadInitialChatData = () => ({
   messagesById: new Map<string, ChatMessage[]>()
 })
 
-const loadStoredChatData = () => {
-  if (typeof window === 'undefined') {
-    return loadInitialChatData()
-  }
-  const storedChatList = normalizeChatList(cacheGetJson<Chat[]>(STORAGE_KEYS.chatList, []))
-  const storedCurrentChatId = cacheGet(STORAGE_KEYS.chatCurrentId)
-  const messagesById = new Map<string, ChatMessage[]>()
-
-  storedChatList.forEach((chat) => {
-    if (!chat?.id) {
-      return
-    }
-    const messages = cacheGetJson<ChatMessage[]>(`ms_${chat.id}`, [])
-    messagesById.set(chat.id, ensureMessageIds(messages))
-  })
-
-  const initialChat =
-    storedChatList.find((chat) => chat.id === storedCurrentChatId) || storedChatList[0]
-
-  return {
-    chatList: storedChatList,
-    currentChatId: initialChat?.id,
-    messagesById
-  }
-}
-
-type SyncOptions = { persist?: boolean; refreshConversation?: boolean }
+type SyncOptions = { refreshConversation?: boolean }
 
 const useChatHook = (): ChatContextValue => {
   const messagesMapRef = useRef<Map<string, ChatMessage[]>>(new Map<string, ChatMessage[]>())
   const chatInstanceRef = useRef<ChatRef | null>(null)
   const chatListRef = useRef<Chat[]>([])
   const currentChatIdRef = useRef<string | undefined>(undefined)
-  const hasHydratedRef = useRef(false)
+  const hasLoadedRef = useRef(false)
   const [initialData] = useState(loadInitialChatData)
 
   const [currentChatId, setCurrentChatId] = useState<string | undefined>(initialData.currentChatId)
@@ -121,41 +96,129 @@ const useChatHook = (): ChatContextValue => {
     [chatList, currentChatId]
   )
 
+  // Fetch chats from database
+  const fetchChatsFromDB = useCallback(async () => {
+    try {
+      const response = await fetch('/api/user/chats', {
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        return data.chats || []
+      }
+    } catch (error) {
+      console.error('Failed to fetch chats from database:', error)
+    }
+    return []
+  }, [])
+
+  // Fetch messages for a chat from database
+  const fetchMessagesFromDB = useCallback(async (chatId: string): Promise<ChatMessage[]> => {
+    try {
+      const response = await fetch(`/api/user/chats/${chatId}/messages`, {
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        return ensureMessageIds(data.messages || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch messages from database:', error)
+    }
+    return []
+  }, [])
+
+  // Create a new chat in the database
+  const createChatInDB = useCallback(
+    async (title: string, persona?: Persona): Promise<Chat | null> => {
+      try {
+        const response = await fetch('/api/user/chats', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({ title })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          return {
+            id: data.chat.id,
+            sessionId: data.chat.session_id,
+            title: data.chat.title,
+            createdAt: data.chat.created_at,
+            updatedAt: data.chat.updated_at,
+            persona
+          }
+        }
+      } catch (error) {
+        console.error('Failed to create chat in database:', error)
+      }
+      return null
+    },
+    []
+  )
+
+  // Delete a chat from the database
+  const deleteChatFromDB = useCallback(async (chatId: string) => {
+    try {
+      const response = await fetch(`/api/user/chats/${chatId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      return response.ok
+    } catch (error) {
+      console.error('Failed to delete chat from database:', error)
+      return false
+    }
+  }, [])
+
+  // Update chat title in database
+  const updateChatTitleInDB = useCallback(async (chatId: string, title: string) => {
+    try {
+      const response = await fetch(`/api/user/chats/${chatId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ title })
+      })
+      return response.ok
+    } catch (error) {
+      console.error('Failed to update chat title:', error)
+      return false
+    }
+  }, [])
+
   const applyState = useCallback(
     (nextList: Chat[], requestedCurrentId?: string, options?: SyncOptions) => {
-      const normalized = sortChatsByRecent(normalizeChatList(nextList))
-      const requestedId = requestedCurrentId ?? currentChatIdRef.current
-      const resolvedCurrentId = normalized.find((chat) => chat.id === requestedId)
-        ? requestedId
-        : normalized[0]?.id
-      const shouldPersist = options?.persist ?? isChatHydrated
-      const shouldRefreshConversation = options?.refreshConversation ?? true
+      const sorted = [...nextList].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
 
-      chatListRef.current = normalized
+      const requestedId = requestedCurrentId ?? currentChatIdRef.current
+      const resolvedCurrentId = sorted.find((chat) => chat.id === requestedId)
+        ? requestedId
+        : sorted[0]?.id
+
+      chatListRef.current = sorted
       currentChatIdRef.current = resolvedCurrentId
-      setChatList(normalized)
+      setChatList(sorted)
       setCurrentChatId(resolvedCurrentId)
 
-      const validIds = new Set(normalized.map((chat) => chat.id))
+      // Clean up messages for deleted chats
+      const validIds = new Set(sorted.map((chat) => chat.id))
       messagesMapRef.current.forEach((_, key) => {
         if (!validIds.has(key)) {
           messagesMapRef.current.delete(key)
-          if (shouldPersist) {
-            cacheRemove(`ms_${key}`)
-          }
         }
       })
 
-      if (shouldPersist) {
-        cacheSet(STORAGE_KEYS.chatList, JSON.stringify(normalized))
-        if (resolvedCurrentId) {
-          cacheSet(STORAGE_KEYS.chatCurrentId, resolvedCurrentId)
-        } else {
-          cacheRemove(STORAGE_KEYS.chatCurrentId)
-        }
-      }
-
-      if (shouldRefreshConversation) {
+      if (options?.refreshConversation !== false) {
         const nextMessages = resolvedCurrentId
           ? messagesMapRef.current.get(resolvedCurrentId) || []
           : []
@@ -163,7 +226,7 @@ const useChatHook = (): ChatContextValue => {
         chatInstanceRef.current?.focus()
       }
     },
-    [isChatHydrated]
+    []
   )
 
   const getChatById = useCallback((id?: string | null) => {
@@ -175,85 +238,66 @@ const useChatHook = (): ChatContextValue => {
   }, [])
 
   const updateChatTitle = useCallback(
-    (chatId: string, title: string) => {
+    async (chatId: string, title: string) => {
       const nextList = chatListRef.current.map((chat) =>
         chat.id === chatId ? { ...chat, title: title || chat.title } : chat
       )
       chatListRef.current = nextList
+      await updateChatTitleInDB(chatId, title)
       applyState(nextList, currentChatIdRef.current, { refreshConversation: false })
     },
-    [applyState]
+    [applyState, updateChatTitleInDB]
   )
 
   const saveMessages = useCallback(
-    (messages: ChatMessage[], chatId?: string, options?: { chat?: Chat }) => {
+    async (messages: ChatMessage[], chatId?: string) => {
       const targetChatId = chatId ?? currentChatIdRef.current
       if (!targetChatId) {
         return
       }
-      const previousCount = messagesMapRef.current.get(targetChatId)?.length ?? 0
-      const normalizedMessages = ensureMessageIds(messages)
-      const latestTimestamp = normalizedMessages.at(-1)?.createdAt ?? new Date().toISOString()
-      if (messages.length > 0) {
-        cacheSet(`ms_${targetChatId}`, JSON.stringify(normalizedMessages))
-        messagesMapRef.current.set(targetChatId, normalizedMessages)
-      } else {
-        cacheRemove(`ms_${targetChatId}`)
-        messagesMapRef.current.delete(targetChatId)
+
+      messagesMapRef.current.set(targetChatId, messages)
+
+      const chat = chatListRef.current.find((item) => item.id === targetChatId)
+      if (!chat) {
+        return
       }
-      const baseList = chatListRef.current
-      const withChat = baseList.some((item) => item.id === targetChatId)
-        ? baseList.map((item) =>
-            item.id === targetChatId
-              ? {
-                  ...item,
-                  updatedAt: messages.length > 0 ? latestTimestamp : item.updatedAt,
-                  title:
-                    previousCount === 0 &&
-                    normalizedMessages.length > 0 &&
-                    (!item.persona || item.persona.id === 'default')
-                      ? deriveTitleFromMessages(
-                          normalizedMessages,
-                          item.title ||
-                            options?.chat?.title ||
-                            options?.chat?.persona?.name ||
-                            'New Chat'
-                        )
-                      : item.title
-                }
-              : item
+
+      const previousCount =
+        messages.length === 0 ? 0 : (messagesMapRef.current.get(targetChatId)?.length ?? 0)
+
+      // Only update title if this is the first user message
+      if (previousCount === 0 && messages.length > 0) {
+        const newTitle = deriveTitleFromMessages(messages, chat.title)
+        if (newTitle !== chat.title) {
+          await updateChatTitleInDB(targetChatId, newTitle)
+          chatListRef.current = chatListRef.current.map((item) =>
+            item.id === targetChatId ? { ...item, title: newTitle } : item
           )
-        : [
-            {
-              id: targetChatId,
-              persona: options?.chat?.persona,
-              title: options?.chat?.title || options?.chat?.persona?.name || 'New Chat',
-              createdAt: latestTimestamp,
-              updatedAt: latestTimestamp
-            },
-            ...baseList
-          ]
-      const nextList = withChat
-      applyState(nextList, currentChatIdRef.current, { refreshConversation: false })
+        }
+      }
     },
-    [applyState]
+    [updateChatTitleInDB]
   )
 
   const activateChat = useCallback(
-    (chat: Chat, options?: { persistOutgoing?: boolean }) => {
-      const { persistOutgoing = true } = options || {}
-      const prevId = currentChatIdRef.current
-      if (persistOutgoing && prevId && prevId !== chat.id) {
-        const outgoingMessages = chatInstanceRef.current?.getConversation() || []
-        saveMessages(outgoingMessages, prevId)
-      }
+    async (chat: Chat) => {
+      void currentChatIdRef.current
+
+      // Fetch messages from database
+      const messages = await fetchMessagesFromDB(chat.id)
+      messagesMapRef.current.set(chat.id, messages)
 
       const baseList = chatListRef.current
       const exists = baseList.some((item) => item.id === chat.id)
       const updatedList = exists ? baseList : [chat, ...baseList]
       applyState(updatedList, chat.id)
+
+      // Set the conversation in the chat component
+      chatInstanceRef.current?.setConversation(messages, chat.id)
+      chatInstanceRef.current?.focus()
     },
-    [applyState, saveMessages]
+    [applyState, fetchMessagesFromDB]
   )
 
   const onChangeChat = useCallback(
@@ -264,23 +308,35 @@ const useChatHook = (): ChatContextValue => {
   )
 
   const onCreateChat = useCallback(
-    (persona: Persona, firstMessage?: string) => {
-      const id = uuid()
-      const now = new Date().toISOString()
+    async (persona: Persona, firstMessage?: string) => {
       const quickTitle = firstMessage
         ? truncateToWords(firstMessage, 4)
         : persona.name || 'New Chat'
-      const newChat: Chat = {
+
+      // Create chat in database
+      const newChat = await createChatInDB(quickTitle, persona)
+
+      if (newChat) {
+        activateChat(newChat)
+        return newChat
+      }
+
+      // Fallback if DB creation fails
+      const id = uuid()
+      const sessionId = uuid()
+      const now = new Date().toISOString()
+      const newChatObj: Chat = {
         id,
+        sessionId,
         persona,
         title: quickTitle,
         createdAt: now,
         updatedAt: now
       }
-      activateChat(newChat)
-      return newChat
+      activateChat(newChatObj)
+      return newChatObj
     },
-    [activateChat]
+    [activateChat, createChatInDB]
   )
 
   const onCreateDefaultChat = useCallback(
@@ -291,23 +347,16 @@ const useChatHook = (): ChatContextValue => {
   )
 
   const onDeleteChat = useCallback(
-    (chat: Chat) => {
+    async (chat: Chat) => {
+      // Delete from database
+      await deleteChatFromDB(chat.id)
+
+      // Update local state
       const filteredList = chatListRef.current.filter((item) => item.id !== chat.id)
-      cacheRemove(`ms_${chat.id}`)
       messagesMapRef.current.delete(chat.id)
 
       const hasChatsLeft = filteredList.length > 0
-      const nextList = hasChatsLeft
-        ? filteredList
-        : [
-            {
-              id: uuid(),
-              title: 'New Chat',
-              persona: DefaultPersona,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
-          ]
+      const nextList = hasChatsLeft ? filteredList : []
 
       const nextChatId =
         currentChatId === chat.id || currentChatIdRef.current === chat.id || !hasChatsLeft
@@ -315,32 +364,63 @@ const useChatHook = (): ChatContextValue => {
           : currentChatIdRef.current
 
       applyState(nextList, nextChatId)
+
+      // If no chats left, create a new one
+      if (!hasChatsLeft) {
+        onCreateDefaultChat()
+      }
     },
-    [applyState, currentChatId]
+    [applyState, deleteChatFromDB, currentChatId, onCreateDefaultChat]
   )
 
+  // Initial load from database
   useEffect(() => {
-    if (hasHydratedRef.current) {
+    if (hasLoadedRef.current) {
       return
     }
-    hasHydratedRef.current = true
-    const stored = loadStoredChatData()
-    messagesMapRef.current = new Map(stored.messagesById)
-    if (stored.chatList.length === 0) {
-      const now = new Date().toISOString()
-      const defaultChat: Chat = {
-        id: uuid(),
-        title: 'New Chat',
-        persona: DefaultPersona,
-        createdAt: now,
-        updatedAt: now
+    hasLoadedRef.current = true
+
+    const loadChats = async () => {
+      const dbChats = await fetchChatsFromDB()
+
+      if (dbChats.length === 0) {
+        // Create a default chat
+        const newChat = await createChatInDB('New Chat', DefaultPersona)
+        if (newChat) {
+          applyState([newChat], newChat.id, { refreshConversation: false })
+        }
+      } else {
+        const chatsWithPersona = dbChats.map(
+          (chat: {
+            id: string
+            session_id: string
+            title: string
+            created_at: string
+            updated_at: string
+            persona_id?: string
+            persona_name?: string
+          }) => ({
+            id: chat.id,
+            sessionId: chat.session_id,
+            title: chat.title,
+            createdAt: chat.created_at,
+            updatedAt: chat.updated_at,
+            persona: chat.persona_id
+              ? {
+                  id: chat.persona_id,
+                  name: chat.persona_name,
+                  role: 'assistant' as const
+                }
+              : DefaultPersona
+          })
+        )
+        applyState(chatsWithPersona, undefined, { refreshConversation: false })
       }
-      applyState([defaultChat], defaultChat.id, { persist: true })
-    } else {
-      applyState(stored.chatList, stored.currentChatId, { persist: false })
+      setIsChatHydrated(true)
     }
-    setIsChatHydrated(true)
-  }, [applyState])
+
+    loadChats()
+  }, [applyState, fetchChatsFromDB, createChatInDB])
 
   return {
     chatRef: chatInstanceRef,

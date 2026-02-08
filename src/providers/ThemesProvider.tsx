@@ -2,11 +2,7 @@
 
 import { useInsertionEffect, useMemo } from 'react'
 import { Toaster } from '@/components/ui/sonner'
-import {
-  applyThemePresetStyles,
-  getThemePresetCss,
-  THEME_STYLE_ELEMENT_ID
-} from '@/lib/themes'
+import { applyThemePresetStyles, getThemePresetCss, THEME_STYLE_ELEMENT_ID } from '@/lib/themes'
 import { CacheKey } from '@/services/constant'
 import { ThemeMode } from '@/types/theme'
 import { ThemeProvider as NextThemesProvider, type ThemeProviderProps } from 'next-themes'

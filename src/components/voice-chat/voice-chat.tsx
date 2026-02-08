@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Mic, MicOff, Volume2, VolumeX, Square } from 'lucide-react'
+import { Mic, MicOff, Square } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Message {
@@ -19,6 +19,7 @@ export function VoiceChat() {
   const [interimTranscript, setInterimTranscript] = useState('')
   const [autoMode, setAutoMode] = useState(false)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
@@ -27,13 +28,18 @@ export function VoiceChat() {
   // Initialize speech recognition
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      const SpeechRecognition =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).SpeechRecognition ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).webkitSpeechRecognition
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition()
         recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = 'zh-CN'
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         recognition.onresult = (event: any) => {
           let interim = ''
           let final = ''
@@ -55,6 +61,7 @@ export function VoiceChat() {
           }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         recognition.onerror = (event: any) => {
           console.error('Speech recognition error:', event.error)
           if (event.error !== 'no-speech' && event.error !== 'aborted') {
@@ -90,6 +97,7 @@ export function VoiceChat() {
         synthRef.current.cancel()
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoMode, isSpeaking])
 
   const handleUserMessage = async (text: string) => {
@@ -270,18 +278,18 @@ export function VoiceChat() {
   }, [isListening])
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="bg-background flex h-full flex-col">
       {/* Header */}
-      <div className="border-b border-border px-6 py-4">
+      <div className="border-border border-b px-6 py-4">
         <h1 className="text-2xl font-bold">Voice Conversation</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-muted-foreground mt-1 text-sm">
           Talk naturally with AI - it can interrupt and respond in real-time
         </p>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="max-w-3xl mx-auto space-y-4">
+        <div className="mx-auto max-w-3xl space-y-4">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -295,16 +303,14 @@ export function VoiceChat() {
                 }`}
               >
                 <p className="text-sm">{message.content}</p>
-                <p className="text-xs opacity-70 mt-1">
-                  {message.timestamp.toLocaleTimeString()}
-                </p>
+                <p className="mt-1 text-xs opacity-70">{message.timestamp.toLocaleTimeString()}</p>
               </div>
             </div>
           ))}
 
           {interimTranscript && (
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl px-4 py-2.5 bg-primary/50 text-primary-foreground">
+              <div className="bg-primary/50 text-primary-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
                 <p className="text-sm italic">{interimTranscript}</p>
               </div>
             </div>
@@ -312,7 +318,7 @@ export function VoiceChat() {
 
           {isProcessing && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl px-4 py-2.5 bg-muted text-foreground">
+              <div className="bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
                 <p className="text-sm">Thinking...</p>
               </div>
             </div>
@@ -321,39 +327,39 @@ export function VoiceChat() {
       </div>
 
       {/* Controls */}
-      <div className="border-t border-border px-6 py-6">
-        <div className="max-w-3xl mx-auto">
+      <div className="border-border border-t px-6 py-6">
+        <div className="mx-auto max-w-3xl">
           {/* Status indicators */}
-          <div className="flex items-center justify-center gap-6 mb-6">
+          <div className="mb-6 flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
               <div
-                className={`w-3 h-3 rounded-full ${
-                  isListening ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+                className={`h-3 w-3 rounded-full ${
+                  isListening ? 'animate-pulse bg-green-500' : 'bg-gray-300'
                 }`}
               />
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {isListening ? 'Listening' : 'Not listening'}
               </span>
             </div>
 
             <div className="flex items-center gap-2">
               <div
-                className={`w-3 h-3 rounded-full ${
-                  isSpeaking ? 'bg-blue-500 animate-pulse' : 'bg-gray-300'
+                className={`h-3 w-3 rounded-full ${
+                  isSpeaking ? 'animate-pulse bg-blue-500' : 'bg-gray-300'
                 }`}
               />
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {isSpeaking ? 'Speaking' : 'Silent'}
               </span>
             </div>
 
             <div className="flex items-center gap-2">
               <div
-                className={`w-3 h-3 rounded-full ${
-                  autoMode ? 'bg-purple-500 animate-pulse' : 'bg-gray-300'
+                className={`h-3 w-3 rounded-full ${
+                  autoMode ? 'animate-pulse bg-purple-500' : 'bg-gray-300'
                 }`}
               />
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {autoMode ? 'Auto mode' : 'Manual mode'}
               </span>
             </div>
@@ -396,7 +402,7 @@ export function VoiceChat() {
             </Button>
           </div>
 
-          <p className="text-center text-sm text-muted-foreground mt-4">
+          <p className="text-muted-foreground mt-4 text-center text-sm">
             {autoMode
               ? 'Auto mode: Speak anytime, AI will respond automatically'
               : 'Manual mode: Click microphone to speak, AI will respond when you finish'}

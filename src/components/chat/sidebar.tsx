@@ -1,6 +1,7 @@
 'use client'
 
 import { useContext, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,12 +14,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAppContext } from '@/contexts/app'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { cn } from '@/lib/utils'
-import { MessageSquare, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  FolderOpen,
+  LogOut,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Settings,
+  Trash2,
+  User
+} from 'lucide-react'
 
 import ChatContext from './chatContext'
 
 export const SideBar = () => {
   const { toggleSidebar, onToggleSidebar } = useAppContext()
+  const router = useRouter()
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null)
   const {
     currentChatId,
     chatList,
@@ -30,6 +44,46 @@ export const SideBar = () => {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // Load user from localStorage and session API
+  useEffect(() => {
+    const loadUser = async () => {
+      // First try localStorage
+      const userStr = localStorage.getItem('user')
+      if (userStr) {
+        try {
+          setUser(JSON.parse(userStr))
+        } catch {
+          // Continue to fetch from API
+        }
+      }
+
+      // Also fetch from session API (for OAuth logins)
+      try {
+        const response = await fetch('/api/auth/session')
+        const data = await response.json()
+        if (data.user) {
+          setUser(data.user)
+          localStorage.setItem('user', JSON.stringify(data.user))
+        }
+      } catch (error) {
+        console.error('Failed to fetch session:', error)
+      }
+    }
+
+    loadUser()
+  }, [])
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/sign-out', { method: 'POST' })
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
+    localStorage.removeItem('isAuthenticated')
+    localStorage.removeItem('user')
+    router.push('/login')
+  }
 
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const isHydrated = isDesktop !== undefined
@@ -83,6 +137,20 @@ export const SideBar = () => {
         )}
       >
         <div className="flex h-full flex-col p-4">
+          {/* Projects Button */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              router.push('/projects')
+              dismissIfMobile()
+            }}
+            className="group/btn mb-3 rounded-full transition-transform active:scale-95"
+          >
+            <FolderOpen className="size-4 transition-transform duration-200 group-hover/btn:scale-110" />
+            <span className="font-medium">Projects</span>
+          </Button>
+
           {/* New Chat Button */}
           <Button
             type="button"
@@ -222,6 +290,41 @@ export const SideBar = () => {
               )}
             </div>
           </ScrollArea>
+
+          {/* User Menu */}
+          <div className="border-border mt-auto border-t pt-4">
+            <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="w-full justify-start gap-3 px-3">
+                  <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                    <User className="size-4" />
+                  </div>
+                  <div className="flex flex-1 flex-col items-start">
+                    <span className="text-sm font-medium">{user?.name || 'User'}</span>
+                    {user?.email && (
+                      <span className="text-muted-foreground text-xs">{user.email}</span>
+                    )}
+                  </div>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => {
+                    router.push('/settings')
+                    dismissIfMobile()
+                  }}
+                >
+                  <Settings className="mr-2 size-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer" onClick={handleLogout}>
+                  <LogOut className="mr-2 size-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
     </>

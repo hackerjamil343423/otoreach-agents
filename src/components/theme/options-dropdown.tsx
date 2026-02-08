@@ -137,7 +137,7 @@ export default function ThemeOptionsDropdown() {
         direction === 'next'
           ? (normalizedIndex + 1) % filteredOptions.length
           : (normalizedIndex - 1 + filteredOptions.length) % filteredOptions.length
-      handleSelect(filteredOptions[nextIndex][0])
+      handleSelect(filteredOptions[nextIndex]?.[0] || themePreset)
     },
     [handleSelect, themePreset, filteredOptions]
   )

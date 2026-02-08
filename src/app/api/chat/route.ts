@@ -1,17 +1,73 @@
 import { NextRequest } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
+import { validateSession } from '@/lib/auth/session'
+import { sql } from '@/lib/db'
+import { v4 as uuid } from 'uuid'
 
 export const runtime = 'edge'
 
 /**
  * OTO Reach Agents webhook endpoint
- * This will be connected to your agent webhooks
+ * Uses user's assigned agents with custom webhooks
+ * Sends input (text only), metadata (selected files), session ID, system prompt, and agent info
  */
-async function forwardToAgentWebhook(messages: any[], input: any) {
-  // TODO: Configure your agent webhook URL here
-  const webhookUrl = process.env.AGENT_WEBHOOK_URL || ''
-
+async function forwardToAgentWebhook(
+  input: string,
+  webhookUrl: string,
+  sessionId: string,
+  metadata?: Array<{
+    id: string
+    name: string
+    url?: string
+    schema?: string
+    project_id?: string
+    sub_project_id?: string
+  }>,
+  systemPrompt?: string | null,
+  agentName?: string | null,
+  projectContext?: string | null
+) {
   if (!webhookUrl) {
-    throw new Error('AGENT_WEBHOOK_URL not configured. Please set the environment variable.')
+    throw new Error('Agent webhook URL not configured')
+  }
+
+  const payload: {
+    session_id: string
+    input: string
+    metadata?: Array<{
+      id: string
+      name: string
+      url?: string
+      schema?: string
+      project_id?: string
+      sub_project_id?: string
+    }>
+    system_prompt?: string
+    agent_name?: string
+    context?: string
+  } = {
+    session_id: sessionId,
+    input
+  }
+
+  // Include file metadata if available
+  if (metadata && metadata.length > 0) {
+    payload.metadata = metadata
+  }
+
+  // Include system prompt if available
+  if (systemPrompt) {
+    payload.system_prompt = systemPrompt
+  }
+
+  // Include agent name if available
+  if (agentName) {
+    payload.agent_name = agentName
+  }
+
+  // Include project context if available
+  if (projectContext) {
+    payload.context = projectContext
   }
 
   const response = await fetch(webhookUrl, {
@@ -19,10 +75,7 @@ async function forwardToAgentWebhook(messages: any[], input: any) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      messages,
-      input
-    })
+    body: JSON.stringify(payload)
   })
 
   if (!response.ok) {
@@ -32,46 +85,218 @@ async function forwardToAgentWebhook(messages: any[], input: any) {
   return response
 }
 
-type MessageContent =
-  | string
-  | Array<
-      | { type: 'text'; text: string }
-      | {
-          type: 'document'
-          name: string
-          content: string
-          mimeType: string
-          images?: Array<{
-            pageNumber: number
-            name: string
-            width: number
-            height: number
-            dataUrl: string
-          }>
-        }
-    >
-
-type ChatCompletionMessage = {
-  role: 'assistant' | 'user' | 'system'
-  content: MessageContent
+// File metadata type for selected documents from user's Supabase
+interface FileMetadata {
+  id: string
+  name: string
+  url?: string
+  schema?: string
+  project_id?: string
+  sub_project_id?: string
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, input } = (await req.json()) as {
-      messages: ChatCompletionMessage[]
-      input: MessageContent
+    const { input, metadata, agentId, chatId } = (await req.json()) as {
+      input: string
+      metadata?: FileMetadata[]
+      agentId?: string
+      chatId?: string
     }
 
-    // Forward to agent webhook
-    const response = await forwardToAgentWebhook(messages, input)
+    // Verify user is authenticated
+    const authHeader = req.headers.get('authorization')
+    const userEmail = req.headers.get('x-user-email')
+
+    let user: { id: string; email: string; name: string | null } | null = null
+
+    if (authHeader) {
+      // Extract token from "Bearer <token>" format
+      const token = authHeader.replace('Bearer ', '')
+      const sessionResult = await validateSession(token)
+      if (sessionResult.valid && sessionResult.payload) {
+        // Get user from database
+        const userResult = await sql`
+          SELECT id, email, name FROM users WHERE id = ${sessionResult.payload.userId}
+        `
+        if (userResult.length > 0 && userResult[0]) {
+          user = userResult[0] as { id: string; email: string; name: string | null }
+        }
+      }
+    } else if (userEmail) {
+      user = await getCurrentUser(userEmail)
+    }
+
+    if (!user) {
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Default webhook from environment
+    let webhookUrl = process.env.AGENT_WEBHOOK_URL || ''
+    let systemPrompt: string | null = null
+    let agentName: string | null = null
+
+    // If agentId is provided, try to get its webhook and verify access
+    if (agentId) {
+      try {
+        // Get agent and verify user has access
+        const result = await sql`
+          SELECT webhook_url, system_prompt, name
+          FROM agents
+          WHERE id = ${agentId}
+            AND is_active = true
+            AND ${user.id} = ANY(assigned_to)
+        `
+        if (result.length > 0 && result[0]) {
+          if (result[0].webhook_url) {
+            webhookUrl = result[0].webhook_url
+          }
+          systemPrompt = result[0].system_prompt
+          agentName = result[0].name
+        } else {
+          throw new Error('Agent not found or access denied')
+        }
+      } catch (dbError) {
+        console.error('Failed to fetch agent:', dbError)
+        throw new Error('Agent not found or access denied')
+      }
+    }
+
+    if (!webhookUrl) {
+      throw new Error(
+        'AGENT_WEBHOOK_URL not configured. Please set the environment variable or assign an agent with a webhook.'
+      )
+    }
+
+    // Get session_id from the chat
+    let sessionId: string
+    let projectContext: string | null = null
+
+    if (chatId) {
+      // Verify chat belongs to user and get session_id
+      const chatResult = await sql`
+        SELECT session_id, user_id FROM chats WHERE id = ${chatId}
+      `
+      if (chatResult.length === 0) {
+        throw new Error('Chat not found')
+      }
+      const chat = chatResult[0]!
+      if (chat.user_id !== user.id) {
+        throw new Error('Unauthorized access to chat')
+      }
+      sessionId = chat.session_id!
+      if (!sessionId) {
+        // Generate session_id if it doesn't exist
+        sessionId = uuid()
+        await sql`
+          UPDATE chats SET session_id = ${sessionId} WHERE id = ${chatId}
+        `
+      }
+
+      // Check for linked project and get context
+      try {
+        const projectLink = await sql`
+          SELECT p.id, p.name, sp.name as sub_project_name, pf.name as file_name, pf.id as file_id
+          FROM chat_project_links cpl
+          JOIN projects p ON p.id = cpl.project_id
+          JOIN sub_projects sp ON sp.project_id = p.id
+          JOIN project_files pf ON pf.sub_project_id = sp.id
+          WHERE cpl.chat_id = ${chatId}
+          LIMIT 1
+        `
+
+        if (projectLink.length > 0 && projectLink[0]) {
+          // Load file content from user's Supabase
+          const { loadFile } = await import('@/lib/supabase/files')
+          try {
+            const link = projectLink[0]!
+            const fileContent = await loadFile(user.id, link.file_id)
+            projectContext = `Project Context: ${link.name} / ${link.sub_project_name} / ${link.file_name}\n\n${fileContent.content}`
+          } catch (error) {
+            console.error('Failed to load project file:', error)
+            // Continue without project context if there's an error
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check project link:', error)
+        // Continue without project context if there's an error
+      }
+    } else {
+      // Create a new chat with session_id
+      sessionId = uuid()
+      const now = new Date().toISOString()
+      const newChat = await sql`
+        INSERT INTO chats (id, user_id, title, session_id, created_at, updated_at)
+        VALUES (${uuid()}, ${user.id}, 'New Chat', ${sessionId}, ${now}, ${now})
+        RETURNING id
+      `
+      // Return the new chat ID in the response headers for the frontend
+      if (newChat[0]?.id) {
+        req.headers.set('x-new-chat-id', newChat[0].id)
+      }
+    }
+
+    // Save user message to database
+    if (chatId) {
+      const now = new Date().toISOString()
+      await sql`
+        INSERT INTO messages (id, chat_id, role, content, created_at)
+        VALUES (${uuid()}, ${chatId}, 'user', ${JSON.stringify(input)}, ${now})
+      `
+      // Update chat's updated_at
+      await sql`
+        UPDATE chats SET updated_at = ${now} WHERE id = ${chatId}
+      `
+    }
+
+    // Forward to agent webhook with input (text only), metadata (selected files), session_id, system prompt, agent name, and project context
+    const response = await forwardToAgentWebhook(
+      input,
+      webhookUrl,
+      sessionId,
+      metadata,
+      systemPrompt,
+      agentName,
+      projectContext
+    )
+
+    // Get the response content
+    const responseText = await response.text()
+
+    // Parse JSON and extract output if it's a JSON response
+    let outputText = responseText
+    try {
+      const jsonResponse = JSON.parse(responseText)
+      if (jsonResponse.output) {
+        outputText = jsonResponse.output
+      }
+    } catch {
+      // Response is not JSON, use as-is
+      outputText = responseText
+    }
+
+    // Save assistant message to database
+    if (chatId && response.ok) {
+      const now = new Date().toISOString()
+      await sql`
+        INSERT INTO messages (id, chat_id, role, content, created_at)
+        VALUES (${uuid()}, ${chatId}, 'assistant', ${JSON.stringify(outputText)}, ${now})
+      `
+      await sql`
+        UPDATE chats SET updated_at = ${now} WHERE id = ${chatId}
+      `
+    }
 
     // Return the response stream
-    return new Response(response.body, {
+    return new Response(outputText, {
       status: response.status,
       headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'text/plain',
-        'Transfer-Encoding': 'chunked'
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'X-Session-ID': sessionId
       }
     })
   } catch (error) {

@@ -27,6 +27,8 @@ import {
   Loader2,
   Mic,
   MicOff,
+  ExternalLink,
+  AlertTriangle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StickToBottom } from 'use-stick-to-bottom'
@@ -35,6 +37,9 @@ import ChatContext from './chatContext'
 import type { ChatMessage, MessageContent } from './interface'
 import { Message } from './message'
 import { usePersonaContext } from './personaContext'
+import { useUserDocuments, convertDocumentsToChatFiles } from '@/hooks/useUserDocuments'
+import { useUserProjects } from '@/hooks/useUserProjects'
+import { FolderOpen } from 'lucide-react'
 
 export interface ChatRef {
   setConversation: (messages: ChatMessage[], chatId?: string | null) => void
@@ -66,13 +71,38 @@ const getAuthHeaders = () => {
   return headers
 }
 
-const sendChatMessage = async (input: MessageContent, agentId?: string, chatId?: string) => {
+// Send chat message to API
+// input: text only
+// metadata: selected file metadata from user's Supabase
+const sendChatMessage = async (
+  input: string, 
+  metadata?: Array<{
+    id: string
+    name: string
+    url?: string
+    schema?: string
+    project_id?: string
+    sub_project_id?: string
+  }>,
+  agentId?: string, 
+  chatId?: string
+) => {
   const url = '/api/chat'
 
-  const data = {
+  const data: {
+    input: string
+    metadata?: typeof metadata
+    agentId?: string
+    chatId?: string
+  } = {
     input,
     agentId,
     chatId
+  }
+
+  // Only include metadata if files are selected
+  if (metadata && metadata.length > 0) {
+    data.metadata = metadata
   }
 
   return await fetch(url, {
@@ -101,77 +131,57 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   const [isComposing, setIsComposing] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [uploadedDocuments, setUploadedDocuments] = useState<
-    Array<{
-      name: string
-      content: string
-      mimeType: string
-      images?: Array<{
-        pageNumber: number
-        name: string
-        width: number
-        height: number
-        dataUrl: string
-      }>
-      size?: string
-      type?: string
-    }>
-  >([
-    {
-      name: 'product_catalog.json',
-      content:
-        '{"products": [{"id": 1, "name": "Laptop", "price": 999}, {"id": 2, "name": "Mouse", "price": 29}]}',
-      mimeType: 'application/json',
-      size: '2.4 KB',
-      type: 'json'
-    },
-    {
-      name: 'company_policies.pdf',
-      content:
-        'Employee Handbook 2024\n\n1. Working Hours\n2. Leave Policy\n3. Remote Work Guidelines',
-      mimeType: 'application/pdf',
-      size: '156 KB',
-      type: 'pdf'
-    },
-    {
-      name: 'customer_data.csv',
-      content:
-        'id,name,email,plan\n1,John Doe,john@example.com,premium\n2,Jane Smith,jane@example.com,basic',
-      mimeType: 'text/csv',
-      size: '128 KB',
-      type: 'csv'
-    },
-    {
-      name: 'api_docs.txt',
-      content:
-        'API Documentation\n\nGET /api/users - List all users\nPOST /api/users - Create user\nPUT /api/users/:id - Update user\nDELETE /api/users/:id - Delete user',
-      mimeType: 'text/plain',
-      size: '456 B',
-      type: 'txt'
-    },
-    {
-      name: 'sales_report.xlsx',
-      content: 'Q1 Sales: $125,000\nQ2 Sales: $143,000\nQ3 Sales: $167,000\nQ4 Sales: $198,000',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      size: '89 KB',
-      type: 'xlsx'
-    },
-    {
-      name: 'database_schema.sql',
-      content:
-        'CREATE TABLE users (\n  id INT PRIMARY KEY,\n  name VARCHAR(100),\n  email VARCHAR(100) UNIQUE\n);',
-      mimeType: 'text/plain',
-      size: '1.2 KB',
-      type: 'sql'
-    }
-  ])
+
+  // Project selection state (must be before useUserDocuments)
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedSubProjectId, setSelectedSubProjectId] = useState<string | null>(null)
+  const [subProjectDropdownOpen, setSubProjectDropdownOpen] = useState(false)
+  const projectDropdownRef = useRef<HTMLDivElement | null>(null)
+  const subProjectDropdownRef = useRef<HTMLDivElement | null>(null)
+
+  // Fetch user's projects
+  const { projects, subProjects, fetchSubProjects } = useUserProjects()
+  
+  // Fetch documents from user's Supabase (filtered by selected project/sub-project)
+  const { 
+    documents: userDocuments, 
+    loading: documentsLoading, 
+    error: documentsError,
+    setupRequired,
+    setupSql
+  } = useUserDocuments({ 
+    autoFetch: true,
+    projectId: selectedProjectId || undefined,
+    subProjectId: selectedSubProjectId || undefined
+  })
+  
+  // Convert user documents to chat file format
+  const uploadedDocuments = convertDocumentsToChatFiles(userDocuments)
+  
+  // Keep track of original document IDs for reference
+  const documentIdMap = useRef<Map<number, string>>(new Map())
+  
+  // Update document ID map when documents change
+  useEffect(() => {
+    const newMap = new Map<number, string>()
+    userDocuments.forEach((doc, index) => {
+      newMap.set(index, doc.id)
+    })
+    documentIdMap.current = newMap
+  }, [userDocuments])
 
   const [currentMessage, setCurrentMessage] = useState<string>('')
   const [isListening, setIsListening] = useState(false)
   const [fileAccessDropdownOpen, setFileAccessDropdownOpen] = useState(false)
-  const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set([0, 1, 3])) // Pre-select some files
+  const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set()) // Selected file indices
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+
+  // Clear selected files when project/sub-project changes
+  useEffect(() => {
+    setAccessibleDocuments(new Set())
+  }, [selectedProjectId, selectedSubProjectId])
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const recognitionRef = useRef<any>(null)
@@ -251,13 +261,27 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       ) {
         setAgentDropdownOpen(false)
       }
+      if (
+        projectDropdownOpen &&
+        projectDropdownRef.current &&
+        !projectDropdownRef.current.contains(event.target as Node)
+      ) {
+        setProjectDropdownOpen(false)
+      }
+      if (
+        subProjectDropdownOpen &&
+        subProjectDropdownRef.current &&
+        !subProjectDropdownRef.current.contains(event.target as Node)
+      ) {
+        setSubProjectDropdownOpen(false)
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [fileAccessDropdownOpen, agentDropdownOpen])
+  }, [fileAccessDropdownOpen, agentDropdownOpen, projectDropdownOpen, subProjectDropdownOpen])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -387,8 +411,10 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
       e.preventDefault()
       const input = getComposerText()
-      if (input.length < 1 && uploadedDocuments.length === 0) {
-        setComposerError('Please enter a message or upload a file to continue.')
+      
+      // Require text input - cannot send empty messages even with files
+      if (!input || input.length < 1) {
+        setComposerError('Please enter a message to continue.')
         return
       }
 
@@ -406,46 +432,28 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       const targetChatId = activeChat.id
       activeChatIdRef.current = targetChatId
       const history = [...conversationRef.current]
-      // Build message content with text and documents
-      let messageContent: MessageContent = input
-      if (uploadedDocuments.length > 0) {
-        const contentParts: Array<
-          | { type: 'text'; text: string }
-          | {
-              type: 'document'
-              name: string
-              content: string
-              mimeType: string
-              images?: Array<{
-                pageNumber: number
-                name: string
-                width: number
-                height: number
-                dataUrl: string
-              }>
-            }
-        > = []
-        if (input) {
-          contentParts.push({ type: 'text', text: input })
-        }
-        uploadedDocuments.forEach((doc, index) => {
-          if (accessibleDocuments.has(index)) {
-            contentParts.push({
-              type: 'document',
-              name: doc.name,
-              content: doc.content,
-              mimeType: doc.mimeType,
-              images: doc.images // Include PDF images
-            })
+      
+      // Build selected file metadata from user's Supabase documents
+      const selectedFileMetadata = Array.from(accessibleDocuments)
+        .map(index => {
+          const doc = userDocuments[index]
+          if (!doc) return null
+          return {
+            id: doc.id,
+            name: doc.title || 'unnamed',
+            url: doc.url || undefined,
+            schema: doc.schema || undefined,
+            project_id: doc.project_id || undefined,
+            sub_project_id: doc.sub_project_id || undefined
           }
         })
-        messageContent = contentParts
-      }
+        .filter((item): item is NonNullable<typeof item> => item !== null)
 
+      // Message content is text only (for display in chat)
       const userMessage: ChatMessage = {
         id: generateMessageId(),
         createdAt: new Date().toISOString(),
-        content: messageContent,
+        content: input, // Text only
         role: 'user'
       }
       const pendingConversation = [...history, userMessage]
@@ -455,14 +463,15 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       setConversation(pendingConversation, targetChatId)
       saveMessages(pendingConversation, targetChatId, { chat: activeChat })
       setMessage('')
-      setUploadedDocuments([])
+      setAccessibleDocuments(new Set()) // Clear file selection after sending
       setCurrentMessage('')
 
       streamingChatIdRef.current = targetChatId
 
       try {
         const response = await sendChatMessage(
-          messageContent,
+          input,
+          selectedFileMetadata,
           selectedAgentId || undefined,
           targetChatId
         )
@@ -671,6 +680,182 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
           <div className={`flex items-center justify-between px-3 pb-3`}>
             <div className="flex items-center gap-2">
+              {/* Project Selection Dropdown */}
+              <div className="relative" ref={projectDropdownRef}>
+                <Button
+                  variant="ghost"
+                  disabled={isCurrentChatLoading || !isChatHydrated}
+                  onClick={() => {
+                    setProjectDropdownOpen((prev) => !prev)
+                    if (!projectDropdownOpen && selectedProjectId) {
+                      void fetchSubProjects(selectedProjectId)
+                    }
+                  }}
+                  aria-label="Select project"
+                  title="Select project"
+                  className={`!h-9 !px-3 !py-2 ${projectDropdownOpen ? 'bg-accent' : ''}`}
+                >
+                  {(() => {
+                    const selectedProject = projects.find((p) => p.id === selectedProjectId)
+                    return (
+                      <>
+                        <FolderOpen className="size-4" />
+                        <span className="ml-2 text-sm max-w-[80px] truncate">
+                          {selectedProject?.name || 'Project'}
+                        </span>
+                        <ChevronDown
+                          className={`size-3 transition-transform ${projectDropdownOpen ? 'rotate-180' : ''}`}
+                        />
+                      </>
+                    )
+                  })()}
+                </Button>
+
+                {projectDropdownOpen && (
+                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
+                    <div className="border-border border-b px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold">Select Project</h3>
+                          <p className="text-muted-foreground text-xs">Choose a project</p>
+                        </div>
+                        <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                          <FolderOpen className="size-4" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-2">
+                      {projects.length === 0 ? (
+                        <p className="text-muted-foreground py-4 text-center text-sm">
+                          No projects available
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {projects.map((project) => {
+                            const isSelected = selectedProjectId === project.id
+                            return (
+                              <button
+                                key={project.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProjectId(project.id)
+                                  setSelectedSubProjectId(null)
+                                  void fetchSubProjects(project.id)
+                                  setProjectDropdownOpen(false)
+                                  setSubProjectDropdownOpen(true)
+                                }}
+                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
+                                  isSelected ? 'bg-accent' : 'hover:bg-muted/50'
+                                }`}
+                              >
+                                <span className="text-lg">{project.icon}</span>
+                                <span
+                                  className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                                >
+                                  {project.name}
+                                </span>
+                                {isSelected && (
+                                  <Check className="text-primary ml-auto size-4 shrink-0" />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sub-Project Selection Dropdown */}
+              {selectedProjectId && (
+                <div className="relative" ref={subProjectDropdownRef}>
+                  <Button
+                    variant="ghost"
+                    disabled={isCurrentChatLoading || !isChatHydrated}
+                    onClick={() => setSubProjectDropdownOpen((prev) => !prev)}
+                    aria-label="Select sub-project"
+                    title="Select sub-project"
+                    className={`!h-9 !px-3 !py-2 ${subProjectDropdownOpen ? 'bg-accent' : ''}`}
+                  >
+                    {(() => {
+                      const projectSubProjects = subProjects[selectedProjectId] || []
+                      const selectedSubProject = projectSubProjects.find((sp) => sp.id === selectedSubProjectId)
+                      return (
+                        <>
+                          <span className="text-sm max-w-[80px] truncate">
+                            {selectedSubProject?.name || 'Sub-project'}
+                          </span>
+                          <ChevronDown
+                            className={`size-3 transition-transform ${subProjectDropdownOpen ? 'rotate-180' : ''}`}
+                          />
+                        </>
+                      )
+                    })()}
+                  </Button>
+
+                  {subProjectDropdownOpen && (
+                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
+                      <div className="border-border border-b px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold">Select Sub-Project</h3>
+                            <p className="text-muted-foreground text-xs">
+                              {projects.find(p => p.id === selectedProjectId)?.name}
+                            </p>
+                          </div>
+                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                            <FolderOpen className="size-4" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto p-2">
+                        {(() => {
+                          const projectSubProjects = subProjects[selectedProjectId] || []
+                          if (projectSubProjects.length === 0) {
+                            return (
+                              <p className="text-muted-foreground py-4 text-center text-sm">
+                                No sub-projects available
+                              </p>
+                            )
+                          }
+                          return (
+                            <div className="space-y-1">
+                              {projectSubProjects.map((subProject) => {
+                                const isSelected = selectedSubProjectId === subProject.id
+                                return (
+                                  <button
+                                    key={subProject.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSubProjectId(subProject.id)
+                                      setSubProjectDropdownOpen(false)
+                                    }}
+                                    className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
+                                      isSelected ? 'bg-accent' : 'hover:bg-muted/50'
+                                    }`}
+                                  >
+                                    <span className="text-lg">{subProject.icon}</span>
+                                    <span
+                                      className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                                    >
+                                      {subProject.name}
+                                    </span>
+                                    {isSelected && (
+                                      <Check className="text-primary ml-auto size-4 shrink-0" />
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Agent Selection Dropdown */}
               <div className="relative" ref={agentDropdownRef}>
                 <Button
@@ -767,14 +952,21 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                 </Button>
 
                 {fileAccessDropdownOpen && (
-                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-72 rounded-lg border shadow-lg">
+                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-80 rounded-lg border shadow-lg">
                     <div className="border-border border-b px-4 py-3">
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="text-sm font-semibold">Knowledge Base</h3>
                           <p className="text-muted-foreground text-xs">
-                            {accessibleDocuments.size} of {uploadedDocuments.length} files
-                            accessible
+                            {setupRequired ? (
+                              <span className="text-amber-600">Setup Required</span>
+                            ) : documentsLoading ? (
+                              'Loading...'
+                            ) : documentsError ? (
+                              <span className="text-red-600">Error loading files</span>
+                            ) : (
+                              `${accessibleDocuments.size} of ${uploadedDocuments.length} files accessible`
+                            )}
                           </p>
                         </div>
                         <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
@@ -783,7 +975,37 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                       </div>
                     </div>
                     <div className="max-h-80 overflow-y-auto p-2">
-                      {uploadedDocuments.length === 0 ? (
+                      {setupRequired ? (
+                        <div className="p-3 text-sm space-y-3">
+                          <div className="flex items-start gap-2 text-amber-600">
+                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                            <p>document_metadata table not found in your Supabase.</p>
+                          </div>
+                          <p className="text-muted-foreground">
+                            Ask your admin to set up the Supabase integration, or create the table manually:
+                          </p>
+                          <a 
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              navigator.clipboard.writeText(setupSql)
+                              toast.success('SQL copied to clipboard')
+                            }}
+                            className="flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <ExternalLink className="size-3" />
+                            Copy SQL Setup Script
+                          </a>
+                        </div>
+                      ) : documentsLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : documentsError ? (
+                        <p className="text-red-600 py-4 text-center text-sm">
+                          {documentsError}
+                        </p>
+                      ) : uploadedDocuments.length === 0 ? (
                         <p className="text-muted-foreground py-4 text-center text-sm">
                           No files available
                         </p>
