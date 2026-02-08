@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { validateSession } from '@/lib/auth/session'
 import { createSupabaseAdminClient } from '@/lib/supabase/client'
 
@@ -7,18 +8,37 @@ export const runtime = 'edge'
 // GET /api/user/documents/categories - Get distinct categories and sub-categories
 export async function GET(req: NextRequest) {
   try {
-    // Validate user session
+    // Get user from token, cookie, or email
     const token = req.cookies.get('auth_token')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const authHeader = req.headers.get('authorization')
+    const userEmail = req.headers.get('x-user-email')
+
+    let userId: string | null = null
+
+    if (token) {
+      // Validate from cookie
+      const sessionResult = await validateSession(token)
+      if (sessionResult.valid && sessionResult.payload) {
+        userId = sessionResult.payload.userId
+      }
+    } else if (authHeader) {
+      // Extract token from "Bearer <token>" format
+      const bearerToken = authHeader.replace('Bearer ', '')
+      const sessionResult = await validateSession(bearerToken)
+      if (sessionResult.valid && sessionResult.payload) {
+        userId = sessionResult.payload.userId
+      }
+    } else if (userEmail) {
+      // Fallback to email
+      const user = await getCurrentUser(userEmail)
+      if (user) {
+        userId = user.id
+      }
     }
 
-    const sessionResult = await validateSession(token)
-    if (!sessionResult.valid || !sessionResult.payload) {
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const userId = sessionResult.payload.userId
 
     try {
       const supabase = await createSupabaseAdminClient(userId)
