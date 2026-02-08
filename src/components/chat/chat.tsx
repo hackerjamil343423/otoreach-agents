@@ -37,9 +37,9 @@ import ChatContext from './chatContext'
 import type { ChatMessage, MessageContent } from './interface'
 import { Message } from './message'
 import { usePersonaContext } from './personaContext'
-import { useUserDocuments, convertDocumentsToChatFiles } from '@/hooks/useUserDocuments'
 import { useUserProjects } from '@/hooks/useUserProjects'
-import { FolderOpen } from 'lucide-react'
+import { useUserCategories } from '@/hooks/useUserCategories'
+import { FolderOpen, Tag } from 'lucide-react'
 
 export interface ChatRef {
   setConversation: (messages: ChatMessage[], chatId?: string | null) => void
@@ -73,17 +73,16 @@ const getAuthHeaders = () => {
 
 // Send chat message to API
 // input: text only
-// metadata: selected file metadata from user's Supabase
+// context: selected category and sub-project info
 const sendChatMessage = async (
   input: string, 
-  metadata?: Array<{
-    id: string
-    name: string
-    url?: string
-    schema?: string
+  context?: {
+    category?: string
+    sub_category?: string
+    sub_project_name?: string
     project_id?: string
     sub_project_id?: string
-  }>,
+  },
   agentId?: string, 
   chatId?: string
 ) => {
@@ -91,7 +90,7 @@ const sendChatMessage = async (
 
   const data: {
     input: string
-    metadata?: typeof metadata
+    context?: typeof context
     agentId?: string
     chatId?: string
   } = {
@@ -100,9 +99,9 @@ const sendChatMessage = async (
     chatId
   }
 
-  // Only include metadata if files are selected
-  if (metadata && metadata.length > 0) {
-    data.metadata = metadata
+  // Only include context if category or sub-project is selected
+  if (context && (context.category || context.sub_project_name)) {
+    data.context = context
   }
 
   return await fetch(url, {
@@ -143,49 +142,36 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
   // Fetch user's projects
   const { projects, subProjects, fetchSubProjects } = useUserProjects()
   
-  // Fetch documents from user's Supabase (filtered by selected project/sub-project)
+  // Fetch categories from user's Supabase
   const { 
-    documents: userDocuments, 
-    loading: documentsLoading, 
-    error: documentsError,
-    setupRequired,
-    setupSql
-  } = useUserDocuments({ 
-    autoFetch: true,
-    projectId: selectedProjectId || undefined,
-    subProjectId: selectedSubProjectId || undefined
-  })
-  
-  // Convert user documents to chat file format
-  const uploadedDocuments = convertDocumentsToChatFiles(userDocuments)
-  
-  // Keep track of original document IDs for reference
-  const documentIdMap = useRef<Map<number, string>>(new Map())
-  
-  // Update document ID map when documents change
-  useEffect(() => {
-    const newMap = new Map<number, string>()
-    userDocuments.forEach((doc, index) => {
-      newMap.set(index, doc.id)
-    })
-    documentIdMap.current = newMap
-  }, [userDocuments])
+    categories, 
+    loading: categoriesLoading, 
+    error: categoriesError,
+    setupRequired: categoriesSetupRequired
+  } = useUserCategories({ autoFetch: true })
 
   const [currentMessage, setCurrentMessage] = useState<string>('')
   const [isListening, setIsListening] = useState(false)
-  const [fileAccessDropdownOpen, setFileAccessDropdownOpen] = useState(false)
-  const [accessibleDocuments, setAccessibleDocuments] = useState<Set<number>>(new Set()) // Selected file indices
+  
+  // Category selection state (single selection)
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
+  const [subCategoryDropdownOpen, setSubCategoryDropdownOpen] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null)
+  const categoryDropdownRef = useRef<HTMLDivElement | null>(null)
+  const subCategoryDropdownRef = useRef<HTMLDivElement | null>(null)
+  
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
 
-  // Clear selected files when project/sub-project changes
+  // Clear selected category when project changes
   useEffect(() => {
-    setAccessibleDocuments(new Set())
-  }, [selectedProjectId, selectedSubProjectId])
+    setSelectedCategory(null)
+    setSelectedSubCategory(null)
+  }, [selectedProjectId])
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const recognitionRef = useRef<any>(null)
-  const fileAccessDropdownRef = useRef<HTMLDivElement | null>(null)
   const agentDropdownRef = useRef<HTMLDivElement | null>(null)
   const isManualStopRef = useRef<boolean>(false)
   const isListeningRef = useRef<boolean>(false)
@@ -225,7 +211,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     isChatHydrated &&
     hasActiveChat &&
     !isCurrentChatLoading &&
-    (Boolean(getComposerText()) || uploadedDocuments.length > 0)
+    Boolean(getComposerText())
   const textareaClassName =
     'text-foreground w-full min-w-0 resize-none !border-0 !bg-transparent text-base leading-relaxed break-all !outline-none !shadow-none focus:!outline-none focus:!border-0 focus:!ring-0 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 max-h-[200px] min-h-[24px] overflow-y-auto [field-sizing:content]'
 
@@ -248,11 +234,18 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     // Close dropdowns when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        fileAccessDropdownOpen &&
-        fileAccessDropdownRef.current &&
-        !fileAccessDropdownRef.current.contains(event.target as Node)
+        categoryDropdownOpen &&
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(event.target as Node)
       ) {
-        setFileAccessDropdownOpen(false)
+        setCategoryDropdownOpen(false)
+      }
+      if (
+        subCategoryDropdownOpen &&
+        subCategoryDropdownRef.current &&
+        !subCategoryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setSubCategoryDropdownOpen(false)
       }
       if (
         agentDropdownOpen &&
@@ -281,7 +274,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [fileAccessDropdownOpen, agentDropdownOpen, projectDropdownOpen, subProjectDropdownOpen])
+  }, [categoryDropdownOpen, subCategoryDropdownOpen, agentDropdownOpen, projectDropdownOpen, subProjectDropdownOpen])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -433,21 +426,19 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       activeChatIdRef.current = targetChatId
       const history = [...conversationRef.current]
       
-      // Build selected file metadata from user's Supabase documents
-      const selectedFileMetadata = Array.from(accessibleDocuments)
-        .map(index => {
-          const doc = userDocuments[index]
-          if (!doc) return null
-          return {
-            id: doc.id,
-            name: doc.title || 'unnamed',
-            url: doc.url || undefined,
-            schema: doc.schema || undefined,
-            project_id: doc.project_id || undefined,
-            sub_project_id: doc.sub_project_id || undefined
-          }
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null)
+      // Get selected sub-project name
+      const selectedSubProjectName = selectedSubProjectId 
+        ? (subProjects[selectedProjectId || ''] || []).find(sp => sp.id === selectedSubProjectId)?.name 
+        : undefined
+
+      // Build context data with category and sub-project names
+      const contextData = {
+        category: selectedCategory || undefined,
+        sub_category: selectedSubCategory || undefined,
+        sub_project_name: selectedSubProjectName,
+        project_id: selectedProjectId || undefined,
+        sub_project_id: selectedSubProjectId || undefined
+      }
 
       // Message content is text only (for display in chat)
       const userMessage: ChatMessage = {
@@ -463,7 +454,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       setConversation(pendingConversation, targetChatId)
       saveMessages(pendingConversation, targetChatId, { chat: activeChat })
       setMessage('')
-      setAccessibleDocuments(new Set()) // Clear file selection after sending
       setCurrentMessage('')
 
       streamingChatIdRef.current = targetChatId
@@ -471,7 +461,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       try {
         const response = await sendChatMessage(
           input,
-          selectedFileMetadata,
+          contextData,
           selectedAgentId || undefined,
           targetChatId
         )
@@ -569,9 +559,12 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       loadingChatId,
       saveMessages,
       setConversation,
-      uploadedDocuments,
-      accessibleDocuments,
-      selectedAgentId
+      selectedAgentId,
+      selectedCategory,
+      selectedSubCategory,
+      selectedProjectId,
+      selectedSubProjectId,
+      subProjects
     ]
   )
 
@@ -935,137 +928,89 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                 )}
               </div>
 
-              {/* File Access Dropdown */}
-              <div className="relative" ref={fileAccessDropdownRef}>
+              {/* Category Selection Dropdown */}
+              <div className="relative" ref={categoryDropdownRef}>
                 <Button
                   variant="ghost"
                   disabled={isCurrentChatLoading || !isChatHydrated}
-                  onClick={() => setFileAccessDropdownOpen((prev) => !prev)}
-                  aria-label="Toggle file access"
-                  title="Toggle file access"
-                  className={`!h-9 !p-2 ${fileAccessDropdownOpen ? 'bg-accent' : ''}`}
+                  onClick={() => setCategoryDropdownOpen((prev) => !prev)}
+                  aria-label="Select category"
+                  title="Select category"
+                  className={`!h-9 !px-3 !py-2 ${categoryDropdownOpen ? 'bg-accent' : ''}`}
                 >
-                  <Database className="size-4" />
+                  <Tag className="size-4" />
+                  <span className="ml-2 text-sm max-w-[100px] truncate">
+                    {selectedCategory || 'Category'}
+                  </span>
                   <ChevronDown
-                    className={`size-3 transition-transform ${fileAccessDropdownOpen ? 'rotate-180' : ''}`}
+                    className={`size-3 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`}
                   />
                 </Button>
 
-                {fileAccessDropdownOpen && (
-                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-80 rounded-lg border shadow-lg">
+                {categoryDropdownOpen && (
+                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
                     <div className="border-border border-b px-4 py-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="text-sm font-semibold">Knowledge Base</h3>
-                          <p className="text-muted-foreground text-xs">
-                            {setupRequired ? (
-                              <span className="text-amber-600">Setup Required</span>
-                            ) : documentsLoading ? (
-                              'Loading...'
-                            ) : documentsError ? (
-                              <span className="text-red-600">Error loading files</span>
-                            ) : (
-                              `${accessibleDocuments.size} of ${uploadedDocuments.length} files accessible`
-                            )}
-                          </p>
+                          <h3 className="text-sm font-semibold">Select Category</h3>
+                          <p className="text-muted-foreground text-xs">Choose a category</p>
                         </div>
                         <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
-                          <File className="size-4" />
+                          <Tag className="size-4" />
                         </div>
                       </div>
                     </div>
-                    <div className="max-h-80 overflow-y-auto p-2">
-                      {setupRequired ? (
-                        <div className="p-3 text-sm space-y-3">
-                          <div className="flex items-start gap-2 text-amber-600">
-                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
-                            <p>document_metadata table not found in your Supabase.</p>
-                          </div>
-                          <p className="text-muted-foreground">
-                            Ask your admin to set up the Supabase integration, or create the table manually:
+                    <div className="max-h-60 overflow-y-auto p-2">
+                      {categoriesSetupRequired ? (
+                        <div className="p-3 text-sm space-y-2">
+                          <p className="text-amber-600">Setup Required</p>
+                          <p className="text-muted-foreground text-xs">
+                            document_metadata table not found.
                           </p>
-                          <a 
-                            href="#"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              navigator.clipboard.writeText(setupSql)
-                              toast.success('SQL copied to clipboard')
-                            }}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <ExternalLink className="size-3" />
-                            Copy SQL Setup Script
-                          </a>
                         </div>
-                      ) : documentsLoading ? (
+                      ) : categoriesLoading ? (
                         <div className="flex items-center justify-center py-4">
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
                         </div>
-                      ) : documentsError ? (
+                      ) : categoriesError ? (
                         <p className="text-red-600 py-4 text-center text-sm">
-                          {documentsError}
+                          {categoriesError}
                         </p>
-                      ) : uploadedDocuments.length === 0 ? (
+                      ) : categories.length === 0 ? (
                         <p className="text-muted-foreground py-4 text-center text-sm">
-                          No files available
+                          No categories available
                         </p>
                       ) : (
                         <div className="space-y-1">
-                          {uploadedDocuments.map((doc, index) => {
-                            const isAccessible = accessibleDocuments.has(index)
-                            const getFileIcon = () => {
-                              const type = doc.type || ''
-                              if (type === 'json')
-                                return <FileJson className="size-4 text-amber-500" />
-                              if (type === 'pdf')
-                                return <FileText className="size-4 text-red-500" />
-                              if (type === 'csv' || type === 'xlsx' || type === 'xls')
-                                return <Database className="size-4 text-green-500" />
-                              if (type === 'sql')
-                                return <Database className="size-4 text-blue-500" />
-                              return <FileCode className="size-4 text-gray-500" />
-                            }
+                          {categories.map((category) => {
+                            const isSelected = selectedCategory === category.name
                             return (
-                              <div
-                                key={`doc-access-${index}`}
-                                className={`group flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
-                                  isAccessible ? 'bg-accent' : 'hover:bg-muted/50'
+                              <button
+                                key={category.name}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCategory(category.name)
+                                  setSelectedSubCategory(null)
+                                  setCategoryDropdownOpen(false)
+                                  // Open sub-category dropdown if has sub-categories
+                                  if (category.subCategories.length > 0) {
+                                    setTimeout(() => setSubCategoryDropdownOpen(true), 100)
+                                  }
+                                }}
+                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
+                                  isSelected ? 'bg-accent' : 'hover:bg-muted/50'
                                 }`}
                               >
-                                <div
-                                  className={`shrink-0 ${isAccessible ? 'opacity-100' : 'opacity-50'}`}
-                                >
-                                  {getFileIcon()}
-                                </div>
+                                <Tag className="size-4 text-muted-foreground" />
                                 <span
-                                  className={`truncate text-sm ${isAccessible ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
-                                  title={doc.name}
+                                  className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
                                 >
-                                  {doc.name}
+                                  {category.name}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAccessibleDocuments((prev) => {
-                                      const newSet = new Set(prev)
-                                      if (newSet.has(index)) {
-                                        newSet.delete(index)
-                                      } else {
-                                        newSet.add(index)
-                                      }
-                                      return newSet
-                                    })
-                                  }}
-                                  className="ml-auto"
-                                  aria-label={isAccessible ? 'Disable access' : 'Enable access'}
-                                >
-                                  {isAccessible ? (
-                                    <Check className="text-primary size-5" />
-                                  ) : (
-                                    <div className="border-border size-5 rounded-full border" />
-                                  )}
-                                </button>
-                              </div>
+                                {isSelected && (
+                                  <Check className="text-primary ml-auto size-4 shrink-0" />
+                                )}
+                              </button>
                             )
                           })}
                         </div>
@@ -1074,6 +1019,88 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                   </div>
                 )}
               </div>
+
+              {/* Sub-Category Selection Dropdown */}
+              {selectedCategory && (
+                <div className="relative" ref={subCategoryDropdownRef}>
+                  <Button
+                    variant="ghost"
+                    disabled={isCurrentChatLoading || !isChatHydrated}
+                    onClick={() => setSubCategoryDropdownOpen((prev) => !prev)}
+                    aria-label="Select sub-category"
+                    title="Select sub-category"
+                    className={`!h-9 !px-3 !py-2 ${subCategoryDropdownOpen ? 'bg-accent' : ''}`}
+                  >
+                    <span className="text-sm max-w-[80px] truncate">
+                      {selectedSubCategory || 'Sub-category'}
+                    </span>
+                    <ChevronDown
+                      className={`size-3 transition-transform ${subCategoryDropdownOpen ? 'rotate-180' : ''}`}
+                    />
+                  </Button>
+
+                  {subCategoryDropdownOpen && (
+                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
+                      <div className="border-border border-b px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold">Select Sub-Category</h3>
+                            <p className="text-muted-foreground text-xs">{selectedCategory}</p>
+                          </div>
+                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
+                            <Tag className="size-4" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto p-2">
+                        {(() => {
+                          const category = categories.find(c => c.name === selectedCategory)
+                          const subCategories = category?.subCategories || []
+                          
+                          if (subCategories.length === 0) {
+                            return (
+                              <p className="text-muted-foreground py-4 text-center text-sm">
+                                No sub-categories
+                              </p>
+                            )
+                          }
+                          
+                          return (
+                            <div className="space-y-1">
+                              {subCategories.map((subCategory) => {
+                                const isSelected = selectedSubCategory === subCategory
+                                return (
+                                  <button
+                                    key={subCategory}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSubCategory(subCategory)
+                                      setSubCategoryDropdownOpen(false)
+                                    }}
+                                    className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
+                                      isSelected ? 'bg-accent' : 'hover:bg-muted/50'
+                                    }`}
+                                  >
+                                    <Tag className="size-3 text-muted-foreground" />
+                                    <span
+                                      className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                                    >
+                                      {subCategory}
+                                    </span>
+                                    {isSelected && (
+                                      <Check className="text-primary ml-auto size-4 shrink-0" />
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {isCurrentChatLoading ? (
               <div

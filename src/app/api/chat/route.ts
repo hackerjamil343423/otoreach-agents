@@ -9,20 +9,19 @@ export const runtime = 'edge'
 /**
  * OTO Reach Agents webhook endpoint
  * Uses user's assigned agents with custom webhooks
- * Sends input (text only), metadata (selected files), session ID, system prompt, and agent info
+ * Sends input (text only), context (category/sub-project), session ID, system prompt, and agent info
  */
 async function forwardToAgentWebhook(
   input: string,
   webhookUrl: string,
   sessionId: string,
-  metadata?: Array<{
-    id: string
-    name: string
-    url?: string
-    schema?: string
+  context?: {
+    category?: string
+    sub_category?: string
+    sub_project_name?: string
     project_id?: string
     sub_project_id?: string
-  }>,
+  },
   systemPrompt?: string | null,
   agentName?: string | null,
   projectContext?: string | null
@@ -34,14 +33,11 @@ async function forwardToAgentWebhook(
   const payload: {
     session_id: string
     input: string
-    metadata?: Array<{
-      id: string
-      name: string
-      url?: string
-      schema?: string
-      project_id?: string
-      sub_project_id?: string
-    }>
+    category?: string
+    sub_category?: string
+    sub_project_name?: string
+    project_id?: string
+    sub_project_id?: string
     system_prompt?: string
     agent_name?: string
     context?: string
@@ -50,9 +46,21 @@ async function forwardToAgentWebhook(
     input
   }
 
-  // Include file metadata if available
-  if (metadata && metadata.length > 0) {
-    payload.metadata = metadata
+  // Include category context if available
+  if (context?.category) {
+    payload.category = context.category
+  }
+  if (context?.sub_category) {
+    payload.sub_category = context.sub_category
+  }
+  if (context?.sub_project_name) {
+    payload.sub_project_name = context.sub_project_name
+  }
+  if (context?.project_id) {
+    payload.project_id = context.project_id
+  }
+  if (context?.sub_project_id) {
+    payload.sub_project_id = context.sub_project_id
   }
 
   // Include system prompt if available
@@ -85,21 +93,20 @@ async function forwardToAgentWebhook(
   return response
 }
 
-// File metadata type for selected documents from user's Supabase
-interface FileMetadata {
-  id: string
-  name: string
-  url?: string
-  schema?: string
+// Context type for category and sub-project selection
+interface ChatContext {
+  category?: string
+  sub_category?: string
+  sub_project_name?: string
   project_id?: string
   sub_project_id?: string
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { input, metadata, agentId, chatId } = (await req.json()) as {
+    const { input, context, agentId, chatId } = (await req.json()) as {
       input: string
-      metadata?: FileMetadata[]
+      context?: ChatContext
       agentId?: string
       chatId?: string
     }
@@ -252,12 +259,12 @@ export async function POST(req: NextRequest) {
       `
     }
 
-    // Forward to agent webhook with input (text only), metadata (selected files), session_id, system prompt, agent name, and project context
+    // Forward to agent webhook with input (text only), context (category/sub-project), session_id, system prompt, agent name, and project context
     const response = await forwardToAgentWebhook(
       input,
       webhookUrl,
       sessionId,
-      metadata,
+      context,
       systemPrompt,
       agentName,
       projectContext
