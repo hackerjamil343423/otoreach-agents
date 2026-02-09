@@ -4,8 +4,6 @@ import { validateSession } from '@/lib/auth/session'
 import { sql } from '@/lib/db'
 import { v4 as uuid } from 'uuid'
 
-export const runtime = 'edge'
-
 /**
  * OTO Reach Agents webhook endpoint
  * Uses user's assigned agents with custom webhooks
