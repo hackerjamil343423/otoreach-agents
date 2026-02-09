@@ -100,7 +100,7 @@ export function ProjectSelector({ chatId, selectedProject, onSelect }: ProjectSe
       <div className="flex items-center gap-2">
         {selectedProject ? (
           <div className="flex items-center gap-2 bg-accent rounded-md px-3 py-1.5">
-            <FolderOpen className="w-4 h-4" style={{ color: selectedProject.color }} />
+            <span className="text-lg shrink-0">{selectedProject.icon || '📁'}</span>
             <span className="text-sm">{selectedProject.name}</span>
             <Button
               size="sm"
@@ -127,7 +127,7 @@ export function ProjectSelector({ chatId, selectedProject, onSelect }: ProjectSe
                 projects.map((project) => (
                   <SelectItem key={project.id} value={project.id} textValue={project.name}>
                     <div className="flex items-center gap-2">
-                      <FolderOpen className="w-4 h-4 shrink-0" style={{ color: project.color }} />
+                      <span className="text-lg shrink-0">{project.icon || '📁'}</span>
                       <span>{project.name}</span>
                     </div>
                   </SelectItem>
