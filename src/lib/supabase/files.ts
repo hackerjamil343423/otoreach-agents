@@ -56,7 +56,7 @@ export async function saveFile(
     throw new Error(`Failed to upload file: ${error.message}`)
   }
 
-  // Save metadata to Neon DB
+  // Save metadata to Neon DB (without category - categories are stored in user's Supabase only)
   await sql`
     INSERT INTO project_files (id, sub_project_id, name, file_type, supabase_storage_path, size_bytes)
     VALUES (${metadata.id}, ${metadata.subProjectId}, ${metadata.name}, ${metadata.fileType}, ${storagePath}, ${metadata.content.length})
@@ -77,10 +77,14 @@ export async function saveFile(
         FROM sub_projects sp
         WHERE sp.id = ${metadata.subProjectId}
       `
-      
-      const projectId = subProjectResult.length > 0 && subProjectResult[0] 
-        ? subProjectResult[0].project_id as string 
+
+      const projectId = subProjectResult.length > 0 && subProjectResult[0]
+        ? subProjectResult[0].project_id as string
         : undefined
+
+      // Use provided category or default to 'documents'
+      const fileCategory = metadata.category || 'documents'
+      const fileSubCategory = metadata.subCategory || undefined
 
       // Save to user's document_metadata table
       await saveDocumentMetadata(userId, {
@@ -88,8 +92,8 @@ export async function saveFile(
         title: metadata.name,
         url: storagePath,
         schema: metadata.fileType,
-        category: metadata.category || 'documents',
-        sub_category: metadata.subCategory,
+        category: fileCategory,
+        sub_category: fileSubCategory,
         project_id: projectId,
         sub_project_id: metadata.subProjectId,
         source: 'project'

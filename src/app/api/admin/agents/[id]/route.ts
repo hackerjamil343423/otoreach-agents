@@ -7,7 +7,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params
     const result = await sql`
       SELECT id, name, description, system_prompt, webhook_url,
-             is_active, is_global, assigned_to, created_at, updated_at
+             is_active, is_global, category, assigned_to, created_at, updated_at
       FROM agents
       WHERE id = ${id}
     `
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const { name, description, system_prompt, webhook_url, is_active, is_global, assigned_to } =
+    const { name, description, system_prompt, webhook_url, is_active, is_global, category, assigned_to } =
       await req.json()
 
     // Check if agent exists
@@ -88,6 +88,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       values.push(assigned_to)
     }
 
+    if (category !== undefined) {
+      updates.push(`category = $${updates.length + 1}`)
+      values.push(category)
+    }
+
     if (updates.length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
@@ -101,7 +106,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       SET ${updates.join(', ')}
       WHERE id = $${values.length}
       RETURNING id, name, description, system_prompt, webhook_url,
-                is_active, is_global, assigned_to, created_at, updated_at
+                is_active, is_global, category, assigned_to, created_at, updated_at
     `,
       values
     )

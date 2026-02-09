@@ -17,23 +17,9 @@ const DefaultPersona: Persona = {
 }
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('auth_token')
-  const user = localStorage.getItem('user')
-
-  const headers: Record<string, string> = {}
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  } else if (user) {
-    try {
-      const userData = JSON.parse(user)
-      headers['x-user-email'] = userData.email || ''
-    } catch {
-      // Invalid user data
-    }
-  }
-
-  return headers
+  // Authentication is handled via HttpOnly cookies
+  // No need to set Authorization header manually
+  return {}
 }
 
 const truncateToWords = (text: string, maxWords: number) => {
@@ -100,7 +86,7 @@ const useChatHook = (): ChatContextValue => {
   const fetchChatsFromDB = useCallback(async () => {
     try {
       const response = await fetch('/api/user/chats', {
-        headers: getAuthHeaders()
+        credentials: 'include'
       })
 
       if (response.ok) {
@@ -117,7 +103,7 @@ const useChatHook = (): ChatContextValue => {
   const fetchMessagesFromDB = useCallback(async (chatId: string): Promise<ChatMessage[]> => {
     try {
       const response = await fetch(`/api/user/chats/${chatId}/messages`, {
-        headers: getAuthHeaders()
+        credentials: 'include'
       })
 
       if (response.ok) {
@@ -137,9 +123,9 @@ const useChatHook = (): ChatContextValue => {
         const response = await fetch('/api/user/chats', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders()
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({ title })
         })
 
@@ -167,7 +153,7 @@ const useChatHook = (): ChatContextValue => {
     try {
       const response = await fetch(`/api/user/chats/${chatId}`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        credentials: 'include'
       })
       return response.ok
     } catch (error) {
@@ -182,9 +168,9 @@ const useChatHook = (): ChatContextValue => {
       const response = await fetch(`/api/user/chats/${chatId}`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
+          'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({ title })
       })
       return response.ok

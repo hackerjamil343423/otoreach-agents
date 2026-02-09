@@ -67,7 +67,7 @@ export async function POST(
 
     const { userId } = auth
     const { subProjectId } = await params
-    const { name, content, fileType } = await req.json()
+    const { name, content, fileType, category, subCategory } = await req.json()
 
     if (!name || name.trim() === '') {
       return NextResponse.json({ error: 'File name is required' }, { status: 400 })
@@ -85,7 +85,9 @@ export async function POST(
         subProjectId,
         name: name.trim(),
         fileType: fileType || 'text',
-        content
+        content,
+        category,
+        subCategory
       })
 
       // Trigger webhook asynchronously (don't await to avoid blocking response)

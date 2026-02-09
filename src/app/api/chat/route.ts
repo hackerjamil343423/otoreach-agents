@@ -111,15 +111,14 @@ export async function POST(req: NextRequest) {
       chatId?: string
     }
 
-    // Verify user is authenticated
-    const authHeader = req.headers.get('authorization')
+    // Verify user is authenticated via cookie (preferred) or email header (fallback)
+    const token = req.cookies.get('auth_token')?.value
     const userEmail = req.headers.get('x-user-email')
 
     let user: { id: string; email: string; name: string | null } | null = null
 
-    if (authHeader) {
-      // Extract token from "Bearer <token>" format
-      const token = authHeader.replace('Bearer ', '')
+    if (token) {
+      // Validate session from cookie
       const sessionResult = await validateSession(token)
       if (sessionResult.valid && sessionResult.payload) {
         // Get user from database
@@ -149,13 +148,13 @@ export async function POST(req: NextRequest) {
     // If agentId is provided, try to get its webhook and verify access
     if (agentId) {
       try {
-        // Get agent and verify user has access
+        // Get agent and verify user has access (global agents or user-specific agents)
         const result = await sql`
           SELECT webhook_url, system_prompt, name
           FROM agents
           WHERE id = ${agentId}
             AND is_active = true
-            AND ${user.id} = ANY(assigned_to)
+            AND (user_id IS NULL OR user_id = ${user.id})
         `
         if (result.length > 0 && result[0]) {
           if (result[0].webhook_url) {

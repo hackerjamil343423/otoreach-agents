@@ -35,6 +35,7 @@ export default function EditAgentPage() {
     webhook_url: '',
     is_active: true,
     is_global: true,
+    category: null,
     assigned_to: []
   })
   const [agent, setAgent] = useState<Agent | null>(null)
@@ -66,6 +67,7 @@ export default function EditAgentPage() {
         webhook_url: data.agent.webhook_url || '',
         is_active: data.agent.is_active,
         is_global: data.agent.is_global,
+        category: data.agent.category || null,
         assigned_to: data.agent.assigned_to || []
       })
     } catch (err) {

@@ -12,6 +12,7 @@ export interface Agent {
   webhook_url: string | null
   is_active: boolean
   is_global: boolean
+  category: string | null
   assigned_to: string[] // Array of user IDs who can access this agent
   created_at: string
   updated_at: string
@@ -34,6 +35,7 @@ export interface AgentFormData {
   webhook_url: string
   is_active: boolean
   is_global: boolean
+  category: string | null
   assigned_to?: string[]
 }
 

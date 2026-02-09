@@ -38,8 +38,7 @@ import type { ChatMessage, MessageContent } from './interface'
 import { Message } from './message'
 import { usePersonaContext } from './personaContext'
 import { useUserProjects } from '@/hooks/useUserProjects'
-import { useUserCategories } from '@/hooks/useUserCategories'
-import { FolderOpen, Tag } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 
 export interface ChatRef {
   setConversation: (messages: ChatMessage[], chatId?: string | null) => void
@@ -141,34 +140,12 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
   // Fetch user's projects
   const { projects, subProjects, fetchSubProjects } = useUserProjects()
-  
-  // Fetch categories from user's Supabase
-  const { 
-    categories, 
-    loading: categoriesLoading, 
-    error: categoriesError,
-    setupRequired: categoriesSetupRequired
-  } = useUserCategories({ autoFetch: true })
 
   const [currentMessage, setCurrentMessage] = useState<string>('')
   const [isListening, setIsListening] = useState(false)
   
-  // Category selection state (single selection)
-  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
-  const [subCategoryDropdownOpen, setSubCategoryDropdownOpen] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null)
-  const categoryDropdownRef = useRef<HTMLDivElement | null>(null)
-  const subCategoryDropdownRef = useRef<HTMLDivElement | null>(null)
-  
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
-
-  // Clear selected category when project changes
-  useEffect(() => {
-    setSelectedCategory(null)
-    setSelectedSubCategory(null)
-  }, [selectedProjectId])
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const recognitionRef = useRef<any>(null)
@@ -234,20 +211,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     // Close dropdowns when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        categoryDropdownOpen &&
-        categoryDropdownRef.current &&
-        !categoryDropdownRef.current.contains(event.target as Node)
-      ) {
-        setCategoryDropdownOpen(false)
-      }
-      if (
-        subCategoryDropdownOpen &&
-        subCategoryDropdownRef.current &&
-        !subCategoryDropdownRef.current.contains(event.target as Node)
-      ) {
-        setSubCategoryDropdownOpen(false)
-      }
-      if (
         agentDropdownOpen &&
         agentDropdownRef.current &&
         !agentDropdownRef.current.contains(event.target as Node)
@@ -274,7 +237,7 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [categoryDropdownOpen, subCategoryDropdownOpen, agentDropdownOpen, projectDropdownOpen, subProjectDropdownOpen])
+  }, [agentDropdownOpen, projectDropdownOpen, subProjectDropdownOpen])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -431,10 +394,8 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
         ? (subProjects[selectedProjectId || ''] || []).find(sp => sp.id === selectedSubProjectId)?.name 
         : undefined
 
-      // Build context data with category and sub-project names
+      // Build context data with sub-project names
       const contextData = {
-        category: selectedCategory || undefined,
-        sub_category: selectedSubCategory || undefined,
         sub_project_name: selectedSubProjectName,
         project_id: selectedProjectId || undefined,
         sub_project_id: selectedSubProjectId || undefined
@@ -560,8 +521,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
       saveMessages,
       setConversation,
       selectedAgentId,
-      selectedCategory,
-      selectedSubCategory,
       selectedProjectId,
       selectedSubProjectId,
       subProjects
@@ -927,180 +886,6 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
                   </div>
                 )}
               </div>
-
-              {/* Category Selection Dropdown */}
-              <div className="relative" ref={categoryDropdownRef}>
-                <Button
-                  variant="ghost"
-                  disabled={isCurrentChatLoading || !isChatHydrated}
-                  onClick={() => setCategoryDropdownOpen((prev) => !prev)}
-                  aria-label="Select category"
-                  title="Select category"
-                  className={`!h-9 !px-3 !py-2 ${categoryDropdownOpen ? 'bg-accent' : ''}`}
-                >
-                  <Tag className="size-4" />
-                  <span className="ml-2 text-sm max-w-[100px] truncate">
-                    {selectedCategory || 'Category'}
-                  </span>
-                  <ChevronDown
-                    className={`size-3 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`}
-                  />
-                </Button>
-
-                {categoryDropdownOpen && (
-                  <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
-                    <div className="border-border border-b px-4 py-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold">Select Category</h3>
-                          <p className="text-muted-foreground text-xs">Choose a category</p>
-                        </div>
-                        <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
-                          <Tag className="size-4" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="max-h-60 overflow-y-auto p-2">
-                      {categoriesSetupRequired ? (
-                        <div className="p-3 text-sm space-y-2">
-                          <p className="text-amber-600">Setup Required</p>
-                          <p className="text-muted-foreground text-xs">
-                            document_metadata table not found.
-                          </p>
-                        </div>
-                      ) : categoriesLoading ? (
-                        <div className="flex items-center justify-center py-4">
-                          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : categoriesError ? (
-                        <p className="text-red-600 py-4 text-center text-sm">
-                          {categoriesError}
-                        </p>
-                      ) : categories.length === 0 ? (
-                        <p className="text-muted-foreground py-4 text-center text-sm">
-                          No categories available
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {categories.map((category) => {
-                            const isSelected = selectedCategory === category.name
-                            return (
-                              <button
-                                key={category.name}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCategory(category.name)
-                                  setSelectedSubCategory(null)
-                                  setCategoryDropdownOpen(false)
-                                  // Open sub-category dropdown if has sub-categories
-                                  if (category.subCategories.length > 0) {
-                                    setTimeout(() => setSubCategoryDropdownOpen(true), 100)
-                                  }
-                                }}
-                                className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
-                                  isSelected ? 'bg-accent' : 'hover:bg-muted/50'
-                                }`}
-                              >
-                                <Tag className="size-4 text-muted-foreground" />
-                                <span
-                                  className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
-                                >
-                                  {category.name}
-                                </span>
-                                {isSelected && (
-                                  <Check className="text-primary ml-auto size-4 shrink-0" />
-                                )}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Sub-Category Selection Dropdown */}
-              {selectedCategory && (
-                <div className="relative" ref={subCategoryDropdownRef}>
-                  <Button
-                    variant="ghost"
-                    disabled={isCurrentChatLoading || !isChatHydrated}
-                    onClick={() => setSubCategoryDropdownOpen((prev) => !prev)}
-                    aria-label="Select sub-category"
-                    title="Select sub-category"
-                    className={`!h-9 !px-3 !py-2 ${subCategoryDropdownOpen ? 'bg-accent' : ''}`}
-                  >
-                    <span className="text-sm max-w-[80px] truncate">
-                      {selectedSubCategory || 'Sub-category'}
-                    </span>
-                    <ChevronDown
-                      className={`size-3 transition-transform ${subCategoryDropdownOpen ? 'rotate-180' : ''}`}
-                    />
-                  </Button>
-
-                  {subCategoryDropdownOpen && (
-                    <div className="border-border bg-popover text-popover-foreground absolute bottom-full left-0 mb-2 w-64 rounded-lg border shadow-lg">
-                      <div className="border-border border-b px-4 py-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-sm font-semibold">Select Sub-Category</h3>
-                            <p className="text-muted-foreground text-xs">{selectedCategory}</p>
-                          </div>
-                          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-full">
-                            <Tag className="size-4" />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="max-h-60 overflow-y-auto p-2">
-                        {(() => {
-                          const category = categories.find(c => c.name === selectedCategory)
-                          const subCategories = category?.subCategories || []
-                          
-                          if (subCategories.length === 0) {
-                            return (
-                              <p className="text-muted-foreground py-4 text-center text-sm">
-                                No sub-categories
-                              </p>
-                            )
-                          }
-                          
-                          return (
-                            <div className="space-y-1">
-                              {subCategories.map((subCategory) => {
-                                const isSelected = selectedSubCategory === subCategory
-                                return (
-                                  <button
-                                    key={subCategory}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedSubCategory(subCategory)
-                                      setSubCategoryDropdownOpen(false)
-                                    }}
-                                    className={`group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${
-                                      isSelected ? 'bg-accent' : 'hover:bg-muted/50'
-                                    }`}
-                                  >
-                                    <Tag className="size-3 text-muted-foreground" />
-                                    <span
-                                      className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
-                                    >
-                                      {subCategory}
-                                    </span>
-                                    {isSelected && (
-                                      <Check className="text-primary ml-auto size-4 shrink-0" />
-                                    )}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
             {isCurrentChatLoading ? (
               <div

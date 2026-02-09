@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
     let query = `
       SELECT a.id, a.name, a.description, a.system_prompt, a.webhook_url,
-             a.is_active, a.is_global, a.assigned_to, a.created_at, a.updated_at
+             a.is_active, a.is_global, a.category, a.assigned_to, a.created_at, a.updated_at
       FROM agents a
     `
 
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     if (userId) {
       query = `
         SELECT DISTINCT a.id, a.name, a.description, a.system_prompt, a.webhook_url,
-               a.is_active, a.is_global, a.assigned_to, a.created_at, a.updated_at
+               a.is_active, a.is_global, a.category, a.assigned_to, a.created_at, a.updated_at
         FROM agents a
         WHERE a.is_global = false AND ${userId} = ANY(a.assigned_to)
            OR a.is_global = true
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 // POST /api/admin/agents - Create new agent
 export async function POST(req: NextRequest) {
   try {
-    const { name, description, system_prompt, webhook_url, is_active, is_global, assigned_to } =
+    const { name, description, system_prompt, webhook_url, is_active, is_global, category, assigned_to } =
       await req.json()
 
     if (!name || !system_prompt) {
@@ -66,15 +66,15 @@ export async function POST(req: NextRequest) {
     const result = await sql`
       INSERT INTO agents (
         id, name, description, system_prompt, webhook_url,
-        is_active, is_global, assigned_to
+        is_active, is_global, category, assigned_to
       )
       VALUES (
         ${uuid()}, ${name}, ${description || null}, ${system_prompt},
         ${webhook_url || null}, ${is_active !== false}, ${is_global !== false},
-        ${assigned_to || []}
+        ${category || null}, ${assigned_to || []}
       )
       RETURNING id, name, description, system_prompt, webhook_url,
-                is_active, is_global, assigned_to, created_at, updated_at
+                is_active, is_global, category, assigned_to, created_at, updated_at
     `
 
     return NextResponse.json({

@@ -125,10 +125,10 @@ export function ProjectSelector({ chatId, selectedProject, onSelect }: ProjectSe
                 </div>
               ) : (
                 projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
+                  <SelectItem key={project.id} value={project.id} textValue={project.name}>
                     <div className="flex items-center gap-2">
-                      <FolderOpen className="w-4 h-4" style={{ color: project.color }} />
-                      {project.name}
+                      <FolderOpen className="w-4 h-4 shrink-0" style={{ color: project.color }} />
+                      <span>{project.name}</span>
                     </div>
                   </SelectItem>
                 ))

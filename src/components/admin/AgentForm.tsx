@@ -1,12 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { type AgentFormData } from '@/lib/types/admin'
-import { Loader2 } from 'lucide-react'
+import { useUserCategories } from '@/hooks/useUserCategories'
+import { Loader2, Tag } from 'lucide-react'
 
 interface AgentFormProps {
   data: AgentFormData
@@ -25,6 +34,9 @@ export function AgentForm({
   isLoading = false,
   submitLabel = 'Save Agent'
 }: AgentFormProps) {
+  const { categories, loading: categoriesLoading, error: categoriesError } = useUserCategories({ autoFetch: true })
+  const [categoryOpen, setCategoryOpen] = useState(false)
+
   return (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -75,6 +87,50 @@ export function AgentForm({
             onChange={(e) => onChange({ ...data, webhook_url: e.target.value })}
             disabled={isLoading}
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="category">Category</Label>
+          <Select
+            value={data.category || undefined}
+            onValueChange={(value) => onChange({ ...data, category: value || null })}
+            disabled={isLoading || categoriesLoading}
+          >
+            <SelectTrigger id="category">
+              <div className="flex items-center gap-2">
+                <Tag className="size-4 text-muted-foreground" />
+                <SelectValue placeholder="Select a category (optional)" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">No category</SelectItem>
+              {categoriesLoading ? (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : categoriesError ? (
+                <div className="text-destructive px-2 py-2 text-sm">
+                  {categoriesError}
+                </div>
+              ) : categories.length === 0 ? (
+                <div className="text-muted-foreground px-2 py-2 text-sm">
+                  No categories available
+                </div>
+              ) : (
+                categories.map((category) => (
+                  <SelectItem key={category.name} value={category.name}>
+                    <div className="flex items-center gap-2">
+                      <Tag className="size-3 text-muted-foreground" />
+                      <span>{category.name}</span>
+                    </div>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            Select a category to associate this agent with specific document categories.
+          </p>
         </div>
 
         <div className="flex items-center justify-between rounded-lg border p-4">

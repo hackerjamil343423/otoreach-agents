@@ -18,6 +18,7 @@ export default function NewAgentPage() {
     webhook_url: '',
     is_active: true,
     is_global: true,
+    category: null,
     assigned_to: []
   })
   const [loadingUsers, setLoadingUsers] = useState(true)

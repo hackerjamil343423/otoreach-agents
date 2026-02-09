@@ -93,11 +93,11 @@ export async function PUT(
 
     const { userId } = auth
     const { id: fileId } = await params
-    const { content, description } = await req.json()
+    const { content, description, category, subCategory } = await req.json()
 
     // Get file metadata and verify ownership
     const fileResult = await sql`
-      SELECT pf.*
+      SELECT pf.*, sp.project_id
       FROM project_files pf
       JOIN sub_projects sp ON sp.id = pf.sub_project_id
       JOIN projects p ON p.id = sp.project_id
@@ -128,20 +128,41 @@ export async function PUT(
 
       // Update metadata in database
       await sql`
-        UPDATE project_files 
+        UPDATE project_files
         SET size_bytes = ${content.length}, updated_at = NOW()
         WHERE id = ${fileId}
       `
+
+      // Sync to Supabase document_metadata if content changed
+      try {
+        const { saveDocumentMetadata } = await import('@/lib/supabase/documentMetadata')
+        await saveDocumentMetadata(userId, {
+          id: fileId,
+          title: file.name,
+          url: file.supabase_storage_path,
+          schema: file.file_type,
+          category: category || file.category || 'documents',
+          sub_category: subCategory || file.sub_category,
+          project_id: file.project_id,
+          sub_project_id: file.sub_project_id,
+          source: 'project'
+        })
+      } catch (syncError) {
+        console.warn('Failed to sync to document_metadata:', syncError)
+      }
     }
 
     // Update description if provided
     if (description !== undefined) {
       await sql`
-        UPDATE project_files 
+        UPDATE project_files
         SET description = ${description || null}, updated_at = NOW()
         WHERE id = ${fileId}
       `
     }
+
+    // Note: category and subCategory are NOT stored in Neon
+    // They are ONLY stored in the user's Supabase document_metadata table
 
     // Trigger webhook asynchronously if content was updated
     if (content !== undefined) {

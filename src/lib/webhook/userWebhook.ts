@@ -1,10 +1,11 @@
 /**
  * User Webhook Service
- * 
+ *
  * Handles sending file data to user-configured webhooks when files are created or updated.
  */
 
 import { sql } from '@/lib/db'
+import { createSupabaseAdminClient } from '@/lib/supabase/client'
 
 export interface WebhookPayload {
   event: 'file.created' | 'file.updated'
@@ -20,6 +21,8 @@ export interface WebhookPayload {
     project_id?: string
     sub_project_id?: string
     storage_path: string
+    category?: string | null
+    sub_category?: string | null
   }
   project?: { id: string; name: string }
   sub_project?: { id: string; name: string }
@@ -63,7 +66,7 @@ export async function getUserWebhookUrl(userId: string): Promise<string | null> 
 async function getFileMetadata(fileId: string): Promise<(FileMetadata & ProjectInfo) | null> {
   try {
     const result = await sql`
-      SELECT 
+      SELECT
         pf.id,
         pf.name,
         pf.description,
@@ -109,6 +112,26 @@ export async function sendFileToWebhook(
     return { success: false, error: 'File not found' }
   }
 
+  // Get category from user's Supabase document_metadata table
+  let category: string | null = null
+  let subCategory: string | null = null
+  try {
+    const supabase = await createSupabaseAdminClient(userId)
+    const { data } = await supabase
+      .from('document_metadata')
+      .select('category, sub_category')
+      .eq('id', fileId)
+      .maybeSingle()
+
+    if (data) {
+      category = data.category
+      subCategory = data.sub_category
+    }
+  } catch (error) {
+    // Category fetch failed, continue without category info
+    console.warn('Failed to fetch category from Supabase:', error)
+  }
+
   // Build payload
   const payload: WebhookPayload = {
     event,
@@ -123,7 +146,9 @@ export async function sendFileToWebhook(
       size_bytes: metadata.size_bytes,
       project_id: metadata.project_id,
       sub_project_id: metadata.sub_project_id,
-      storage_path: metadata.storage_path
+      storage_path: metadata.storage_path,
+      category,
+      sub_category: subCategory
     },
     project: {
       id: metadata.project_id,

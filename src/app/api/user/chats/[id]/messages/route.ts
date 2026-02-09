@@ -9,14 +9,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id: chatId } = await params
 
-    const authHeader = req.headers.get('authorization')
+    // Get user from cookie (preferred) or email header (fallback)
+    const token = req.cookies.get('auth_token')?.value
     const userEmail = req.headers.get('x-user-email')
 
     let user: { id: string; email: string; name: string | null } | null = null
 
-    if (authHeader) {
-      // Extract token from "Bearer <token>" format
-      const token = authHeader.replace('Bearer ', '')
+    if (token) {
+      // Validate session from cookie
       const sessionResult = await validateSession(token)
       if (sessionResult.valid && sessionResult.payload) {
         // Get user from database
@@ -67,14 +67,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { id: chatId } = await params
 
-    const authHeader = req.headers.get('authorization')
+    // Get user from cookie (preferred) or email header (fallback)
+    const token = req.cookies.get('auth_token')?.value
     const userEmail = req.headers.get('x-user-email')
 
     let user: { id: string; email: string; name: string | null } | null = null
 
-    if (authHeader) {
-      // Extract token from "Bearer <token>" format
-      const token = authHeader.replace('Bearer ', '')
+    if (token) {
+      // Validate session from cookie
       const sessionResult = await validateSession(token)
       if (sessionResult.valid && sessionResult.payload) {
         // Get user from database
