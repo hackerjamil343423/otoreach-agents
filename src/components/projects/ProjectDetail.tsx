@@ -131,12 +131,6 @@ export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: Proj
                 <ArrowLeft className="w-5 h-5" />
               </Button>
             )}
-            <div 
-              className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0"
-              style={{ backgroundColor: `${project.color}20`, color: project.color }}
-            >
-              {project.icon || '📁'}
-            </div>
             <div>
               <h1 className="text-2xl font-semibold">{project.name}</h1>
               {project.description && (
