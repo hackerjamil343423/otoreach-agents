@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,8 +14,14 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { type AgentFormData } from '@/lib/types/admin'
-import { useUserCategories } from '@/hooks/useUserCategories'
-import { Loader2, Tag } from 'lucide-react'
+import { useAdminUserCategories } from '@/hooks/useAdminUserCategories'
+import { Loader2, Tag, User } from 'lucide-react'
+
+interface User {
+  id: string
+  email: string
+  name: string | null
+}
 
 interface AgentFormProps {
   data: AgentFormData
@@ -34,8 +40,36 @@ export function AgentForm({
   isLoading = false,
   submitLabel = 'Save Agent'
 }: AgentFormProps) {
-  const { categories, loading: categoriesLoading, error: categoriesError } = useUserCategories({ autoFetch: true })
-  const [categoryOpen, setCategoryOpen] = useState(false)
+  const [users, setUsers] = useState<User[]>([])
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [usersLoading, setUsersLoading] = useState(false)
+
+  // Fetch categories based on selected user
+  const { categories, loading: categoriesLoading, error: categoriesError, refetch: fetchCategories } = useAdminUserCategories(selectedUserId, { autoFetch: true })
+
+  // Fetch users on mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setUsersLoading(true)
+      try {
+        const res = await fetch('/api/admin/users')
+        const data = await res.json()
+        setUsers(data.users || [])
+      } catch (err) {
+        console.error('Failed to fetch users:', err)
+      } finally {
+        setUsersLoading(false)
+      }
+    }
+    void fetchUsers()
+  }, [])
+
+  // Clear category when user changes
+  useEffect(() => {
+    if (selectedUserId) {
+      onChange({ ...data, category: null })
+    }
+  }, [selectedUserId])
 
   return (
     <div className="space-y-6">
@@ -89,47 +123,104 @@ export function AgentForm({
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="category">Category</Label>
-          <Select
-            value={data.category || undefined}
-            onValueChange={(value) => onChange({ ...data, category: value || null })}
-            disabled={isLoading || categoriesLoading}
-          >
-            <SelectTrigger id="category">
-              <div className="flex items-center gap-2">
-                <Tag className="size-4 text-muted-foreground" />
-                <SelectValue placeholder="Select a category (optional)" />
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {categoriesLoading ? (
-                <div className="flex items-center justify-center py-2">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        {/* User and Category Selection Row */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* User Selector */}
+          <div className="space-y-2">
+            <Label htmlFor="category-user">User for Category *</Label>
+            <Select
+              value={selectedUserId || undefined}
+              onValueChange={(value) => setSelectedUserId(value)}
+              disabled={isLoading || usersLoading}
+            >
+              <SelectTrigger id="category-user">
+                <div className="flex items-center gap-2">
+                  <User className="size-4 text-muted-foreground" />
+                  <SelectValue placeholder={usersLoading ? 'Loading users...' : 'Select a user'} />
                 </div>
-              ) : categoriesError ? (
-                <div className="text-destructive px-2 py-2 text-sm">
-                  {categoriesError}
+              </SelectTrigger>
+              <SelectContent>
+                {usersLoading ? (
+                  <div className="flex items-center justify-center py-2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="text-muted-foreground px-2 py-2 text-sm">
+                    No users available
+                  </div>
+                ) : (
+                  users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      <div className="flex items-center gap-2">
+                        <User className="size-3 text-muted-foreground" />
+                        <span>{user.name || user.email}</span>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Select a user to load their categories
+            </p>
+          </div>
+
+          {/* Category Selector */}
+          <div className="space-y-2">
+            <Label htmlFor="category">Category</Label>
+            <Select
+              value={data.category || undefined}
+              onValueChange={(value) => onChange({ ...data, category: value || null })}
+              disabled={isLoading || categoriesLoading || !selectedUserId}
+            >
+              <SelectTrigger id="category">
+                <div className="flex items-center gap-2">
+                  <Tag className="size-4 text-muted-foreground" />
+                  <SelectValue placeholder={
+                    !selectedUserId
+                      ? 'Select a user first'
+                      : categoriesLoading
+                        ? 'Loading...'
+                        : 'Select a category (optional)'
+                  } />
                 </div>
-              ) : categories.length === 0 ? (
-                <div className="text-muted-foreground px-2 py-2 text-sm">
-                  No categories available
-                </div>
-              ) : (
-                categories.map((category) => (
-                  <SelectItem key={category.name} value={category.name}>
-                    <div className="flex items-center gap-2">
-                      <Tag className="size-3 text-muted-foreground" />
-                      <span>{category.name}</span>
-                    </div>
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            Select a category to associate this agent with specific document categories.
-          </p>
+              </SelectTrigger>
+              <SelectContent>
+                {!selectedUserId ? (
+                  <div className="text-muted-foreground px-2 py-2 text-sm">
+                    Select a user first
+                  </div>
+                ) : categoriesLoading ? (
+                  <div className="flex items-center justify-center py-2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : categoriesError ? (
+                  <div className="text-destructive px-2 py-2 text-sm">
+                    {categoriesError}
+                  </div>
+                ) : categories.length === 0 ? (
+                  <div className="text-muted-foreground px-2 py-2 text-sm">
+                    No categories available
+                  </div>
+                ) : (
+                  categories.map((category) => (
+                    <SelectItem key={category.name} value={category.name}>
+                      <div className="flex items-center gap-2">
+                        <Tag className="size-3 text-muted-foreground" />
+                        <span>{category.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {selectedUserId
+                ? 'Associate agent with a category'
+                : 'Select a user to see categories'
+              }
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center justify-between rounded-lg border p-4">
