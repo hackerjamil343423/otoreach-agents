@@ -66,7 +66,7 @@ export function useUserProjects() {
       const data = await res.json()
       setSubProjects(prev => ({
         ...prev,
-        [projectId]: data.subProjects || []
+        [projectId]: data.sub_projects || []
       }))
     } catch (err) {
       console.error('Failed to fetch sub-projects:', err)
