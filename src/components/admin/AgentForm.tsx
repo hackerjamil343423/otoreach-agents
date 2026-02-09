@@ -103,7 +103,6 @@ export function AgentForm({
               </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">No category</SelectItem>
               {categoriesLoading ? (
                 <div className="flex items-center justify-center py-2">
                   <Loader2 className="size-4 animate-spin text-muted-foreground" />
