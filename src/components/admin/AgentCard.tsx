@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { type Agent } from '@/lib/types/admin'
 import { format } from 'date-fns'
-import { Bot, Edit, Globe, Trash2, User } from 'lucide-react'
+import { Bot, Edit, Globe, Tag, Trash2, User } from 'lucide-react'
 
 interface AgentCardProps {
   agent: Agent
@@ -35,7 +35,7 @@ export function AgentCard({
             </div>
             <div>
               <CardTitle className="text-lg">{agent.name}</CardTitle>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
                 {agent.is_global ? (
                   <Badge variant="secondary" className="gap-1">
                     <Globe className="h-3 w-3" />
@@ -50,6 +50,12 @@ export function AgentCard({
                 <Badge variant={agent.is_active ? 'default' : 'secondary'}>
                   {agent.is_active ? 'Active' : 'Inactive'}
                 </Badge>
+                {agent.category && (
+                  <Badge variant="outline" className="gap-1">
+                    <Tag className="h-3 w-3" />
+                    {agent.category}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>

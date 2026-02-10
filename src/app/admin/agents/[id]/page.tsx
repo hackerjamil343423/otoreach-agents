@@ -19,6 +19,7 @@ import {
   Globe,
   Loader2,
   Sparkles,
+  Tag,
   Trash2,
   Users
 } from 'lucide-react'
@@ -221,6 +222,12 @@ export default function EditAgentPage() {
                       </>
                     )}
                   </Badge>
+                  {agent.category && (
+                    <Badge variant="outline" className="gap-1.5">
+                      <Tag className="size-3 text-orange-600" />
+                      {agent.category}
+                    </Badge>
+                  )}
                 </div>
                 {agent.description && (
                   <p className="text-muted-foreground mt-2 max-w-2xl">{agent.description}</p>
