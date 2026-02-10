@@ -22,6 +22,7 @@ async function forwardToAgentWebhook(
   },
   systemPrompt?: string | null,
   agentName?: string | null,
+  agentCategory?: string | null,
   projectContext?: string | null
 ) {
   if (!webhookUrl) {
@@ -38,14 +39,17 @@ async function forwardToAgentWebhook(
     sub_project_id?: string
     system_prompt?: string
     agent_name?: string
+    agent_category?: string
     context?: string
   } = {
     session_id: sessionId,
     input
   }
 
-  // Include category context if available
-  if (context?.category) {
+  // Include agent category if available (takes priority over context category)
+  if (agentCategory) {
+    payload.category = agentCategory
+  } else if (context?.category) {
     payload.category = context.category
   }
   if (context?.sub_category) {
@@ -142,13 +146,14 @@ export async function POST(req: NextRequest) {
     let webhookUrl = process.env.AGENT_WEBHOOK_URL || ''
     let systemPrompt: string | null = null
     let agentName: string | null = null
+    let agentCategory: string | null = null
 
     // If agentId is provided, try to get its webhook and verify access
     if (agentId) {
       try {
         // Get agent and verify user has access (global agents or user-specific agents)
         const result = await sql`
-          SELECT webhook_url, system_prompt, name
+          SELECT webhook_url, system_prompt, name, category
           FROM agents
           WHERE id = ${agentId}
             AND is_active = true
@@ -160,6 +165,7 @@ export async function POST(req: NextRequest) {
           }
           systemPrompt = result[0].system_prompt
           agentName = result[0].name
+          agentCategory = result[0].category
         } else {
           throw new Error('Agent not found or access denied')
         }
@@ -256,7 +262,7 @@ export async function POST(req: NextRequest) {
       `
     }
 
-    // Forward to agent webhook with input (text only), context (category/sub-project), session_id, system prompt, agent name, and project context
+    // Forward to agent webhook with input (text only), context (category/sub-project), session_id, system prompt, agent name, agent category, and project context
     const response = await forwardToAgentWebhook(
       input,
       webhookUrl,
@@ -264,6 +270,7 @@ export async function POST(req: NextRequest) {
       context,
       systemPrompt,
       agentName,
+      agentCategory,
       projectContext
     )
 
