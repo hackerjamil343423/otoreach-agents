@@ -17,12 +17,11 @@ import {
   Files,
   Loader2,
   Trash2,
-  Edit3,
   ArrowLeft,
   MoreHorizontal
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,7 +37,7 @@ interface ProjectDetailProps {
 }
 
 export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: ProjectDetailProps) {
-  const [view, setView] = useState<'subprojects' | 'files'>('subprojects')
+  
   const [selectedSubProject, setSelectedSubProject] = useState<SubProject | null>(null)
   
   // New sub-project dialog
@@ -98,7 +97,7 @@ export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: Proj
         const data = await res.json()
         toast.error(data.error || 'Failed to create folder')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to create folder')
     } finally {
       setCreatingSubProject(false)
@@ -189,7 +188,6 @@ export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: Proj
               <SubProjectCard
                 key={subProject.id}
                 subProject={subProject}
-                projectId={project.id}
                 onClick={() => setSelectedSubProject(subProject)}
                 onRefresh={loadSubProjects}
               />
@@ -204,7 +202,7 @@ export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: Proj
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
             <DialogDescription>
-              Create a folder in "{project.name}" to organize your files.
+              Create a folder in &quot;{project.name}&quot; to organize your files.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -251,12 +249,11 @@ export function ProjectDetail({ project, onBack, onSelectFile, onRefresh }: Proj
 
 interface SubProjectCardProps {
   subProject: SubProject
-  projectId: string
   onClick: () => void
   onRefresh: () => void
 }
 
-function SubProjectCard({ subProject, projectId, onClick, onRefresh }: SubProjectCardProps) {
+function SubProjectCard({ subProject, onClick, onRefresh }: SubProjectCardProps) {
   const [fileCount, setFileCount] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -282,7 +279,7 @@ function SubProjectCard({ subProject, projectId, onClick, onRefresh }: SubProjec
         const data = await res.json()
         toast.error(data.error || 'Failed to delete folder')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete folder')
     } finally {
       setDeleting(false)
@@ -345,7 +342,7 @@ function SubProjectCard({ subProject, projectId, onClick, onRefresh }: SubProjec
           <DialogHeader>
             <DialogTitle>Delete Folder</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{subProject.name}"? This will also delete all files within it. This action cannot be undone.
+              Are you sure you want to delete &quot;{subProject.name}&quot;? This will also delete all files within it. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -431,7 +428,7 @@ function SubProjectDetail({ project, subProject, onBack, onSelectFile, onRefresh
         const data = await res.json()
         toast.error(data.error || 'Failed to create file')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to create file')
     } finally {
       setCreating(false)
@@ -450,7 +447,7 @@ function SubProjectDetail({ project, subProject, onBack, onSelectFile, onRefresh
       } else {
         toast.error('Failed to delete file')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete file')
     }
   }
@@ -527,7 +524,7 @@ function SubProjectDetail({ project, subProject, onBack, onSelectFile, onRefresh
           <DialogHeader>
             <DialogTitle>Create New File</DialogTitle>
             <DialogDescription>
-              Create a file in "{subProject.name}".
+              Create a file in &quot;{subProject.name}&quot;.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -625,7 +622,7 @@ function FileCard({ file, onClick, onDelete }: FileCardProps) {
           <DialogHeader>
             <DialogTitle>Delete File</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{file.name}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{file.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

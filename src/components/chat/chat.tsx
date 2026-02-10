@@ -19,22 +19,15 @@ import {
   Bot,
   Check,
   ChevronDown,
-  Database,
-  File,
-  FileCode,
-  FileJson,
-  FileText,
   Loader2,
   Mic,
-  MicOff,
-  ExternalLink,
-  AlertTriangle
+  MicOff
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StickToBottom } from 'use-stick-to-bottom'
 
 import ChatContext from './chatContext'
-import type { ChatMessage, MessageContent } from './interface'
+import type { ChatMessage } from './interface'
 import { Message } from './message'
 import { usePersonaContext } from './personaContext'
 import { useUserProjects } from '@/hooks/useUserProjects'

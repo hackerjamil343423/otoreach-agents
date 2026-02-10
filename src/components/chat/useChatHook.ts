@@ -16,11 +16,7 @@ const DefaultPersona: Persona = {
   isDefault: true
 }
 
-const getAuthHeaders = () => {
-  // Authentication is handled via HttpOnly cookies
-  // No need to set Authorization header manually
-  return {}
-}
+
 
 const truncateToWords = (text: string, maxWords: number) => {
   const words = text.split(/\s+/).slice(0, maxWords)

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Project } from '@/lib/types/projects'
-import { FolderOpen, Unlink } from 'lucide-react'
+import { Unlink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ProjectSelectorProps {

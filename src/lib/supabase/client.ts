@@ -151,13 +151,13 @@ export async function ensureProjectBucket(userId: string): Promise<void> {
   let supabase
   try {
     supabase = await createSupabaseClient(userId, 'service_role')
-  } catch (error) {
+  } catch {
     // User doesn't have service role configured - try with anon key
     // We won't be able to create the bucket, but we can check if it exists
     console.warn('Service role not configured, checking bucket with anon key')
     try {
       supabase = await createSupabaseClient(userId, 'anon')
-    } catch (anonError) {
+    } catch {
       throw new Error('No valid Supabase credentials configured')
     }
   }

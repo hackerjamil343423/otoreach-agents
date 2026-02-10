@@ -45,7 +45,7 @@ export function AgentForm({
   const [usersLoading, setUsersLoading] = useState(false)
 
   // Fetch categories based on selected user
-  const { categories, loading: categoriesLoading, error: categoriesError, refetch: fetchCategories } = useAdminUserCategories(selectedUserId, { autoFetch: true })
+  const { categories, loading: categoriesLoading, error: categoriesError } = useAdminUserCategories(selectedUserId, { autoFetch: true })
 
   // Fetch users on mount
   useEffect(() => {
@@ -69,6 +69,7 @@ export function AgentForm({
     if (selectedUserId) {
       onChange({ ...data, category: null })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUserId])
 
   return (

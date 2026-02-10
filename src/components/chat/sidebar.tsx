@@ -37,8 +37,6 @@ export const SideBar = () => {
     currentChatId,
     chatList,
     onDeleteChat,
-    onChangeChat,
-    onCreateDefaultChat,
     updateChatTitle
   } = useContext(ChatContext)
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)

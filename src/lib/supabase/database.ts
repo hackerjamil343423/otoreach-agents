@@ -317,7 +317,7 @@ export async function checkUserSupabaseSchema(userId: string): Promise<{
       existingTables,
       missingTables
     }
-  } catch (error) {
+  } catch {
     return {
       initialized: false,
       existingTables: [],

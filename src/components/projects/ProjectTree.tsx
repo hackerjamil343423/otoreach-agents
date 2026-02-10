@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronRight, FileText, Folder, Plus, Trash2, Loader2, MoreHorizontal, FolderOpen, FileIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Plus, Trash2, Loader2, MoreHorizontal, FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -71,6 +71,7 @@ function ProjectItem({ project, isSelected, onSelectProject, onSelectFile, selec
     if (expanded && subProjects.length === 0 && project.sub_projects_count && project.sub_projects_count > 0) {
       loadSubProjects()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, project.id])
 
   const loadSubProjects = useCallback(async () => {
@@ -256,7 +257,7 @@ function ProjectItem({ project, isSelected, onSelectProject, onSelectFile, selec
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
             <DialogDescription>
-              Create a folder in "{project.name}" to organize your files.
+              Create a folder in &quot;{project.name}&quot; to organize your files.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -293,7 +294,7 @@ function ProjectItem({ project, isSelected, onSelectProject, onSelectFile, selec
           <DialogHeader>
             <DialogTitle>Delete Project</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{project.name}"? This will also delete all folders and files within it. This action cannot be undone.
+              Are you sure you want to delete &quot;{project.name}&quot;? This will also delete all folders and files within it. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -336,6 +337,7 @@ function SubProjectItem({ subProject, projectId, onSelectFile, selectedFile, onR
     if (expanded && files.length === 0) {
       loadFiles()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, subProject.id])
 
   const loadFiles = useCallback(async () => {
@@ -512,7 +514,7 @@ function SubProjectItem({ subProject, projectId, onSelectFile, selectedFile, onR
           <DialogHeader>
             <DialogTitle>Create New File</DialogTitle>
             <DialogDescription>
-              Create a file in "{subProject.name}".
+              Create a file in &quot;{subProject.name}&quot;.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -552,7 +554,7 @@ function SubProjectItem({ subProject, projectId, onSelectFile, selectedFile, onR
           <DialogHeader>
             <DialogTitle>Delete Folder</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{subProject.name}"? This will also delete all files within it. This action cannot be undone.
+              Are you sure you want to delete &quot;{subProject.name}&quot;? This will also delete all files within it. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
