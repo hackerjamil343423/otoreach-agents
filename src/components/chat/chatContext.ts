@@ -18,6 +18,7 @@ type ChatContextValue = {
   onCreateDefaultChat: (firstMessage?: string) => Promise<Chat | undefined>
   onChangeChat: (chat: Chat) => void
   saveMessages: (messages: ChatMessage[], chatId?: string, options?: { chat?: Chat }) => void
+  clearCurrentChat: () => void
 }
 
 const ChatContext = createContext<ChatContextValue>({
@@ -31,7 +32,8 @@ const ChatContext = createContext<ChatContextValue>({
   onCreateChat: async () => undefined,
   onCreateDefaultChat: async () => undefined,
   onChangeChat: () => {},
-  saveMessages: () => {}
+  saveMessages: () => {},
+  clearCurrentChat: () => {}
 })
 
 export type { ChatContextValue }

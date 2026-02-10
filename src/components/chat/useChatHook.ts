@@ -404,6 +404,12 @@ const useChatHook = (): ChatContextValue => {
     loadChats()
   }, [applyState, fetchChatsFromDB, createChatInDB])
 
+  // Clear the current chat selection (for "New Chat" button)
+  const clearCurrentChat = useCallback(() => {
+    currentChatIdRef.current = undefined
+    setCurrentChatId(undefined)
+  }, [])
+
   return {
     chatRef: chatInstanceRef,
     currentChatId,
@@ -416,7 +422,8 @@ const useChatHook = (): ChatContextValue => {
     onCreateDefaultChat,
     onDeleteChat,
     onChangeChat,
-    saveMessages
+    saveMessages,
+    clearCurrentChat
   }
 }
 

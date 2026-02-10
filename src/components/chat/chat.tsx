@@ -186,12 +186,18 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
     'text-foreground w-full min-w-0 resize-none !border-0 !bg-transparent text-base leading-relaxed break-all !outline-none !shadow-none focus:!outline-none focus:!border-0 focus:!ring-0 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 max-h-[200px] min-h-[24px] overflow-y-auto [field-sizing:content]'
 
   const ensureActiveChat = useCallback(async () => {
+    // If currentChatId was intentionally cleared, don't auto-select old chat
     const targetId = conversationChatIdRef.current ?? currentChatId ?? null
-    const chat = getChatById(targetId)
+
+    // Only look up chat if we have a target ID
+    const chat = targetId ? getChatById(targetId) : null
+
     if (chat) {
       conversationChatIdRef.current = chat.id
       return chat
     }
+
+    // No chat selected - create new one
     const created = await onCreateDefaultChat?.()
     if (created) {
       conversationChatIdRef.current = created.id
@@ -350,6 +356,14 @@ const Chat = (_: object, ref: React.ForwardedRef<ChatRef>) => {
 
   useEffect(() => {
     activeChatIdRef.current = currentChatId ?? null
+  }, [currentChatId])
+
+  // Clear conversation when currentChatId is cleared (New Chat clicked)
+  useEffect(() => {
+    if (!currentChatId) {
+      conversationChatIdRef.current = undefined
+      setConversation([])
+    }
   }, [currentChatId])
 
   const sendMessage = useCallback(

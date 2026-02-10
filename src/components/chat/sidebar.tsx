@@ -37,7 +37,8 @@ export const SideBar = () => {
     currentChatId,
     chatList,
     onDeleteChat,
-    updateChatTitle
+    updateChatTitle,
+    clearCurrentChat
   } = useContext(ChatContext)
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -92,6 +93,7 @@ export const SideBar = () => {
     }
   }
   const handleNewChat = () => {
+    clearCurrentChat()
     router.push('/chat')
     dismissIfMobile()
   }
