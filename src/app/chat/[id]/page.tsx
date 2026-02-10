@@ -1,36 +1,46 @@
 'use client'
 
-import { Suspense, useContext, useEffect } from 'react'
+import { Suspense, useContext, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Chat, ChatContext, PersonaProvider, SideBar, useChatHook } from '@/components/chat'
 
 const ChatProvider = ({ chatId }: { chatId: string }) => {
   const router = useRouter()
   const provider = useChatHook()
+  const { isChatHydrated, getChatById, onChangeChat } = provider
+  const hasLoadedChat = useRef(false)
+  const hasCheckedAuth = useRef(false)
 
-  // Load the specific chat when component mounts
+  // Check authentication first (only once)
   useEffect(() => {
-    // Check if user is authenticated
+    if (hasCheckedAuth.current) return
+    hasCheckedAuth.current = true
+
     const isAuthenticated = localStorage.getItem('isAuthenticated')
     if (isAuthenticated !== 'true') {
       router.push('/login')
-      return
     }
+  }, [router])
 
-    // Load the specific chat by ID
-    const loadChatById = async () => {
-      const { getChatById, onChangeChat } = provider
-      const chat = getChatById(chatId)
-      if (chat) {
+  // Load the specific chat after hydration
+  useEffect(() => {
+    if (!isChatHydrated || hasLoadedChat.current) return
+
+    const chat = getChatById(chatId)
+    if (chat) {
+      // Small delay to ensure Chat component has mounted
+      const timer = setTimeout(() => {
         onChangeChat(chat)
-      } else {
-        // Chat not found, redirect to main chat page
-        router.push('/chat')
-      }
+        hasLoadedChat.current = true
+      }, 50)
+      return () => clearTimeout(timer)
+    } else {
+      // Chat not found in list - don't redirect, just mark as loaded
+      // The user can create a new chat if needed
+      hasLoadedChat.current = true
     }
-
-    loadChatById()
-  }, [chatId, provider, router])
+    return
+  }, [isChatHydrated, chatId, getChatById, onChangeChat])
 
   return (
     <ChatContext.Provider value={provider}>

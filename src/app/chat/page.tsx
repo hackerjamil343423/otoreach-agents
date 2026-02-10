@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useContext, useEffect, useRef } from 'react'
+import { Suspense, useContext, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Chat, ChatContext, PersonaProvider, SideBar, useChatHook } from '@/components/chat'
 
@@ -8,8 +8,6 @@ const ChatProvider = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
   const provider = useChatHook()
-  const { chatList, isChatHydrated, onCreateDefaultChat } = provider
-  const hasHandledNavigation = useRef(false)
 
   useEffect(() => {
     // Handle OAuth callback
@@ -23,7 +21,7 @@ const ChatProvider = () => {
         localStorage.setItem('user', userStr)
         localStorage.setItem('isAuthenticated', 'true')
 
-        // Clean URL and redirect to most recent chat or create new
+        // Clean URL
         window.history.replaceState({}, '', '/chat')
         return
       } catch {
@@ -37,34 +35,8 @@ const ChatProvider = () => {
     const isAuthenticated = localStorage.getItem('isAuthenticated')
     if (isAuthenticated !== 'true') {
       router.push('/login')
-      return
     }
   }, [router, searchParams])
-
-  // Redirect to most recent chat or create new one when on /chat
-  useEffect(() => {
-    if (!isChatHydrated || hasHandledNavigation.current) return
-
-    // Only redirect if we're on the base /chat URL
-    if (window.location.pathname === '/chat') {
-      hasHandledNavigation.current = true
-
-      if (chatList.length > 0) {
-        // Redirect to most recent chat
-        const mostRecentChat = chatList[0]
-        if (mostRecentChat) {
-          router.replace(`/chat/${mostRecentChat.id}`)
-        }
-      } else {
-        // Create new chat and redirect to its URL
-        onCreateDefaultChat().then((chat) => {
-          if (chat) {
-            router.replace(`/chat/${chat.id}`)
-          }
-        })
-      }
-    }
-  }, [isChatHydrated, chatList, router, onCreateDefaultChat])
 
   return (
     <ChatContext.Provider value={provider}>
