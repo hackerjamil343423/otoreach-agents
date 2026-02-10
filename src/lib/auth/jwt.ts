@@ -9,7 +9,7 @@ function getJwtSecret(): string {
   }
   // Only throw in production if no secret is set
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET environment variable must be set in production')
+    throw new Error('JWT_SECRET environment variable must be set in production. Please add it in your Vercel project settings.')
   }
   // Development fallback - should NOT be used in production
   return 'dev-secret-key-change-in-production-min-32-chars'
