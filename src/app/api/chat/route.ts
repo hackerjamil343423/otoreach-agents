@@ -17,6 +17,7 @@ async function forwardToAgentWebhook(
     category?: string
     sub_category?: string
     sub_project_name?: string
+    project_name?: string
     project_id?: string
     sub_project_id?: string
   },
@@ -34,6 +35,7 @@ async function forwardToAgentWebhook(
     input: string
     category?: string
     sub_category?: string
+    project_name?: string
     sub_project_name?: string
     project_id?: string
     sub_project_id?: string
@@ -54,6 +56,9 @@ async function forwardToAgentWebhook(
   }
   if (context?.sub_category) {
     payload.sub_category = context.sub_category
+  }
+  if (context?.project_name) {
+    payload.project_name = context.project_name
   }
   if (context?.sub_project_name) {
     payload.sub_project_name = context.sub_project_name
@@ -99,6 +104,7 @@ async function forwardToAgentWebhook(
 interface ChatContext {
   category?: string
   sub_category?: string
+  project_name?: string
   sub_project_name?: string
   project_id?: string
   sub_project_id?: string
@@ -106,12 +112,15 @@ interface ChatContext {
 
 export async function POST(req: NextRequest) {
   try {
-    const { input, context, agentId, chatId } = (await req.json()) as {
+    const { input, context: requestContext, agentId, chatId } = (await req.json()) as {
       input: string
       context?: ChatContext
       agentId?: string
       chatId?: string
     }
+
+    // Create mutable context variable that can be augmented with project info
+    let context: ChatContext | undefined = requestContext
 
     // Verify user is authenticated via cookie (preferred) or email header (fallback)
     const token = req.cookies.get('auth_token')?.value
@@ -225,6 +234,13 @@ export async function POST(req: NextRequest) {
             const link = projectLink[0]!
             const fileContent = await loadFile(user.id, link.file_id)
             projectContext = `Project Context: ${link.name} / ${link.sub_project_name} / ${link.file_name}\n\n${fileContent.content}`
+            // Add project name to context for webhook payload
+            context = {
+              ...context,
+              project_name: link.name,
+              project_id: context?.project_id || link.id,
+              sub_project_name: context?.sub_project_name || link.sub_project_name
+            }
           } catch (error) {
             console.error('Failed to load project file:', error)
             // Continue without project context if there's an error
@@ -246,6 +262,24 @@ export async function POST(req: NextRequest) {
       // Return the new chat ID in the response headers for the frontend
       if (newChat[0]?.id) {
         req.headers.set('x-new-chat-id', newChat[0].id)
+      }
+    }
+
+    // Fetch project name if project_id is provided but project_name is missing
+    if (context?.project_id && !context?.project_name) {
+      try {
+        const projectResult = await sql`
+          SELECT name FROM projects WHERE id = ${context.project_id}
+        `
+        if (projectResult.length > 0 && projectResult[0]?.name) {
+          context = {
+            ...context,
+            project_name: projectResult[0].name
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch project name:', error)
+        // Continue without project name if there's an error
       }
     }
 

@@ -2,10 +2,10 @@
  * User Webhook Service
  *
  * Handles sending file data to user-configured webhooks when files are created or updated.
+ * No Supabase dependency - only Neon DB + webhook.
  */
 
 import { sql } from '@/lib/db'
-import { createSupabaseAdminClient } from '@/lib/supabase/client'
 
 export interface WebhookPayload {
   event: 'file.created' | 'file.updated'
@@ -20,7 +20,6 @@ export interface WebhookPayload {
     size_bytes: number
     project_id?: string
     sub_project_id?: string
-    storage_path: string
     category?: string | null
     sub_category?: string | null
   }
@@ -28,21 +27,15 @@ export interface WebhookPayload {
   sub_project?: { id: string; name: string }
 }
 
-interface FileMetadata {
-  id: string
-  name: string
-  description?: string
-  file_type: string
-  size_bytes: number
-  storage_path: string
-  sub_project_id: string
-  user_id: string
-}
-
-interface ProjectInfo {
+interface WebhookMetadata {
   project_id: string
   project_name: string
+  sub_project_id: string
   sub_project_name: string
+  file_name: string
+  file_type: string
+  category?: string
+  sub_category?: string
 }
 
 /**
@@ -61,104 +54,106 @@ export async function getUserWebhookUrl(userId: string): Promise<string | null> 
 }
 
 /**
- * Get file metadata including project info
- */
-async function getFileMetadata(fileId: string): Promise<(FileMetadata & ProjectInfo) | null> {
-  try {
-    const result = await sql`
-      SELECT
-        pf.id,
-        pf.name,
-        pf.description,
-        pf.file_type,
-        pf.size_bytes,
-        pf.supabase_storage_path as storage_path,
-        pf.sub_project_id,
-        sp.name as sub_project_name,
-        sp.project_id,
-        p.name as project_name,
-        p.user_id
-      FROM project_files pf
-      JOIN sub_projects sp ON pf.sub_project_id = sp.id
-      JOIN projects p ON sp.project_id = p.id
-      WHERE pf.id = ${fileId}
-    `
-    return result[0] as (FileMetadata & ProjectInfo) || null
-  } catch (error) {
-    console.error('Failed to get file metadata:', error)
-    return null
-  }
-}
-
-/**
  * Send file data to user's webhook with retry logic
  */
 export async function sendFileToWebhook(
   userId: string,
   fileId: string,
   content: string,
-  event: 'file.created' | 'file.updated'
+  event: 'file.created' | 'file.updated',
+  metadata?: WebhookMetadata
 ): Promise<{ success: boolean; error?: string }> {
+  console.log('[sendFileToWebhook] Starting:', { userId, fileId, event, metadata })
+
   // Get webhook URL
   const webhookUrl = await getUserWebhookUrl(userId)
   if (!webhookUrl) {
     // No webhook configured, silently skip
+    console.log('[sendFileToWebhook] No webhook URL configured for user:', userId)
     return { success: true }
   }
 
-  // Get file metadata
-  const metadata = await getFileMetadata(fileId)
-  if (!metadata) {
-    return { success: false, error: 'File not found' }
-  }
+  console.log('[sendFileToWebhook] Webhook URL found:', webhookUrl)
 
-  // Get category from user's Supabase document_metadata table
-  let category: string | null = null
-  let subCategory: string | null = null
-  try {
-    const supabase = await createSupabaseAdminClient(userId)
-    const { data } = await supabase
-      .from('document_metadata')
-      .select('category, sub_category')
-      .eq('id', fileId)
-      .maybeSingle()
+  // Build payload with metadata or fetch from database
+  let payload: WebhookPayload
 
-    if (data) {
-      category = data.category
-      subCategory = data.sub_category
+  if (metadata) {
+    // Use provided metadata
+    payload = {
+      event,
+      timestamp: new Date().toISOString(),
+      user_id: userId,
+      file: {
+        id: fileId,
+        name: metadata.file_name,
+        content,
+        file_type: metadata.file_type,
+        size_bytes: content.length,
+        project_id: metadata.project_id,
+        sub_project_id: metadata.sub_project_id,
+        category: metadata.category || null,
+        sub_category: metadata.sub_category || null
+      },
+      project: {
+        id: metadata.project_id,
+        name: metadata.project_name
+      },
+      sub_project: {
+        id: metadata.sub_project_id,
+        name: metadata.sub_project_name
+      }
     }
-  } catch (error) {
-    // Category fetch failed, continue without category info
-    console.warn('Failed to fetch category from Supabase:', error)
-  }
+  } else {
+    // Fetch from database
+    const fileData = await sql`
+      SELECT
+        pf.id,
+        pf.name,
+        pf.description,
+        pf.file_type,
+        pf.size_bytes,
+        pf.sub_project_id,
+        sp.name as sub_project_name,
+        sp.project_id,
+        p.name as project_name
+      FROM project_files pf
+      JOIN sub_projects sp ON pf.sub_project_id = sp.id
+      JOIN projects p ON sp.project_id = p.id
+      WHERE pf.id = ${fileId}
+    `
 
-  // Build payload
-  const payload: WebhookPayload = {
-    event,
-    timestamp: new Date().toISOString(),
-    user_id: userId,
-    file: {
-      id: fileId,
-      name: metadata.name,
-      description: metadata.description,
-      content,
-      file_type: metadata.file_type,
-      size_bytes: metadata.size_bytes,
-      project_id: metadata.project_id,
-      sub_project_id: metadata.sub_project_id,
-      storage_path: metadata.storage_path,
-      category,
-      sub_category: subCategory
-    },
-    project: {
-      id: metadata.project_id,
-      name: metadata.project_name
-    },
-    sub_project: {
-      id: metadata.sub_project_id,
-      name: metadata.sub_project_name
+    if (fileData.length === 0) {
+      return { success: false, error: 'File not found' }
+    }
+
+    const file = fileData[0] as Record<string, unknown>
+    payload = {
+      event,
+      timestamp: new Date().toISOString(),
+      user_id: userId,
+      file: {
+        id: fileId,
+        name: file.name as string,
+        description: file.description as string | undefined,
+        content,
+        file_type: file.file_type as string,
+        size_bytes: content.length,
+        project_id: file.project_id as string,
+        sub_project_id: file.sub_project_id as string
+      },
+      project: {
+        id: file.project_id as string,
+        name: file.project_name as string
+      },
+      sub_project: {
+        id: file.sub_project_id as string,
+        name: file.sub_project_name as string
+      }
     }
   }
+
+  console.log('[sendFileToWebhook] Sending payload:', JSON.stringify(payload, null, 2))
 
   // Send with retry logic
   const maxRetries = 3
@@ -171,7 +166,9 @@ export async function sendFileToWebhook(
         headers: {
           'Content-Type': 'application/json',
           'X-Webhook-Event': event,
-          'X-Webhook-Attempt': attempt.toString()
+          'X-Webhook-Attempt': attempt.toString(),
+          'X-Webhook-User-Id': userId,
+          'X-Webhook-File-Id': fileId
         },
         body: JSON.stringify(payload),
         // 30 second timeout
@@ -179,7 +176,7 @@ export async function sendFileToWebhook(
       })
 
       if (response.ok) {
-        console.log(`Webhook sent successfully for file ${fileId} (${event}, attempt ${attempt})`)
+        console.log(`[sendFileToWebhook] Webhook sent successfully for file ${fileId} (${event}, attempt ${attempt})`)
         return { success: true }
       }
 
@@ -187,7 +184,7 @@ export async function sendFileToWebhook(
       throw new Error(`HTTP ${response.status}: ${errorText}`)
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
-      console.warn(`Webhook attempt ${attempt} failed for file ${fileId}:`, lastError.message)
+      console.warn(`[sendFileToWebhook] Attempt ${attempt} failed for file ${fileId}:`, lastError.message)
 
       // Don't retry on 4xx errors (client errors)
       if (lastError.message.includes('HTTP 4')) {
@@ -202,19 +199,20 @@ export async function sendFileToWebhook(
     }
   }
 
-  return { 
-    success: false, 
-    error: `Failed after ${maxRetries} attempts: ${lastError?.message}` 
+  console.error(`[sendFileToWebhook] Failed after ${maxRetries} attempts for file ${fileId}`)
+  return {
+    success: false,
+    error: `Failed after ${maxRetries} attempts: ${lastError?.message}`
   }
 }
 
 /**
  * Test webhook URL by sending a ping event
  */
-export async function testWebhookUrl(webhookUrl: string): Promise<{ 
-  success: boolean; 
+export async function testWebhookUrl(webhookUrl: string): Promise<{
+  success: boolean;
   error?: string;
-  responseTime?: number 
+  responseTime?: number
 }> {
   try {
     // Validate URL format
@@ -241,18 +239,18 @@ export async function testWebhookUrl(webhookUrl: string): Promise<{
     }
 
     const errorText = await response.text().catch(() => 'Unknown error')
-    return { 
-      success: false, 
+    return {
+      success: false,
       error: `HTTP ${response.status}: ${errorText}`,
-      responseTime 
+      responseTime
     }
   } catch (error) {
     if (error instanceof TypeError) {
       return { success: false, error: 'Invalid URL format' }
     }
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
     }
   }
 }

@@ -7,19 +7,22 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { 
-  Loader2, 
-  CheckCircle, 
-  XCircle, 
-  Database, 
-  Trash2, 
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Database,
+  Trash2,
   Play,
   Code,
   Copy,
   Check,
   AlertTriangle,
   Webhook,
-  Send
+  Send,
+  Eye,
+  EyeOff,
+  Info
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -72,11 +75,15 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [sqlScript, setSqlScript] = useState<string>('')
   const [copied, setCopied] = useState(false)
-  
+
   // Webhook state
   const [webhookSaving, setWebhookSaving] = useState(false)
   const [webhookTesting, setWebhookTesting] = useState(false)
   const [webhookTestResult, setWebhookTestResult] = useState<TestResult | null>(null)
+
+  // Visibility toggles for showing sensitive data
+  const [showWebhookUrl, setShowWebhookUrl] = useState(false)
+  const [showConfigSummary, setShowConfigSummary] = useState(true)
 
   const loadConfig = useCallback(async () => {
     try {
@@ -143,8 +150,8 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
 
       if (res.ok) {
         setStatus(prev => ({ ...prev, is_configured: true }))
-        setTestResult({ 
-          success: true, 
+        setTestResult({
+          success: true,
           message: 'Configuration saved successfully',
           credentialType: config.useServiceRole ? 'service_role' : 'anon'
         })
@@ -183,9 +190,9 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
           schemaStatus: data.schemaStatus
         })
         // Update status
-        setStatus(prev => ({ 
-          ...prev, 
-          schema_initialized: data.schemaStatus?.initialized ?? prev.schema_initialized 
+        setStatus(prev => ({
+          ...prev,
+          schema_initialized: data.schemaStatus?.initialized ?? prev.schema_initialized
         }))
       } else {
         setTestResult({
@@ -273,20 +280,20 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
       const data = await res.json()
 
       if (res.ok) {
-        setWebhookTestResult({ 
-          success: true, 
+        setWebhookTestResult({
+          success: true,
           message: 'Webhook URL saved successfully'
         })
       } else {
-        setWebhookTestResult({ 
-          success: false, 
-          message: data.error || 'Failed to save webhook URL' 
+        setWebhookTestResult({
+          success: false,
+          message: data.error || 'Failed to save webhook URL'
         })
       }
     } catch {
-      setWebhookTestResult({ 
-        success: false, 
-        message: 'Network error. Please try again.' 
+      setWebhookTestResult({
+        success: false,
+        message: 'Network error. Please try again.'
       })
     } finally {
       setWebhookSaving(false)
@@ -295,9 +302,9 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
 
   async function testWebhook() {
     if (!webhookConfig.webhook_url) {
-      setWebhookTestResult({ 
-        success: false, 
-        message: 'Please enter a webhook URL first' 
+      setWebhookTestResult({
+        success: false,
+        message: 'Please enter a webhook URL first'
       })
       return
     }
@@ -335,8 +342,114 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
 
   const hasWebhookUrl = !!webhookConfig.webhook_url
 
+  // Helper to mask/show webhook URL
+  const displayWebhookUrl = showWebhookUrl
+    ? webhookConfig.webhook_url
+    : webhookConfig.webhook_url
+      ? `${webhookConfig.webhook_url.substring(0, 30)}...${webhookConfig.webhook_url.slice(-10)}`
+      : ''
+
   return (
     <div className="space-y-4">
+      {/* Configuration Summary Card - Shows all configured values */}
+      {(hasWebhookUrl || status.is_configured) && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Info className="h-4 w-4 text-primary" />
+                Configuration Summary
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowConfigSummary(!showConfigSummary)}
+                className="h-7"
+              >
+                {showConfigSummary ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </CardHeader>
+          {showConfigSummary && (
+            <CardContent className="pt-0">
+              <div className="space-y-3 text-sm">
+                {/* Webhook Configuration Display */}
+                {hasWebhookUrl && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-muted-foreground">Webhook URL:</span>
+                      <div className="flex items-center gap-2">
+                        <code className="text-xs bg-background px-2 py-0.5 rounded">
+                          {displayWebhookUrl || 'Not set'}
+                        </code>
+                        {webhookConfig.webhook_url && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setShowWebhookUrl(!showWebhookUrl)}
+                          >
+                            {showWebhookUrl ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {webhookTestResult?.success && (
+                      <div className="flex items-center gap-2 text-green-600 text-xs">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Test passed {webhookTestResult.responseTime && `(${webhookTestResult.responseTime}ms)`}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Supabase Configuration Display */}
+                {status.is_configured && (
+                  <div className="space-y-2 pt-2 border-t">
+                    <p className="font-medium text-muted-foreground text-xs">Supabase Configuration:</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Status:</span>{' '}
+                        <Badge variant="outline" className="ml-1">
+                          {status.is_configured ? 'Configured' : 'Not Configured'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Service Role:</span>{' '}
+                        <Badge variant={status.has_service_role ? 'default' : 'secondary'} className="ml-1">
+                          {status.has_service_role ? 'Enabled' : 'Not Set'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Schema:</span>{' '}
+                        <Badge variant={status.schema_initialized ? 'default' : 'secondary'} className="ml-1">
+                          {status.schema_initialized ? 'Ready' : 'Not Init'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Bucket:</span>{' '}
+                        <span className="font-mono">{status.project_bucket_name || 'N/A'}</span>
+                      </div>
+                    </div>
+                    {testResult?.success && testResult.schemaStatus && (
+                      <div className="text-xs pt-1">
+                        <span className="text-muted-foreground">Tables:</span>{' '}
+                        <span className={testResult.schemaStatus.initialized ? 'text-green-600' : 'text-amber-600'}>
+                          {testResult.schemaStatus.initialized
+                            ? `✓ ${testResult.schemaStatus.existingTables.length} tables ready`
+                            : `⚠ ${testResult.schemaStatus.missingTables.length} tables missing`
+                          }
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       {/* Webhook Configuration Card */}
       <Card>
         <CardHeader>
@@ -364,22 +477,22 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
               disabled={webhookSaving || webhookTesting}
             />
             <p className="text-muted-foreground text-xs">
-              This URL will receive POST requests with file content and metadata whenever 
+              This URL will receive POST requests with file content and metadata whenever
               files are created or updated in the user&apos;s projects.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button 
-              onClick={saveWebhookConfig} 
+            <Button
+              onClick={saveWebhookConfig}
               disabled={webhookSaving}
             >
               {webhookSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {hasWebhookUrl ? 'Update Webhook' : 'Save Webhook'}
             </Button>
-            <Button 
-              variant="outline" 
-              onClick={testWebhook} 
+            <Button
+              variant="outline"
+              onClick={testWebhook}
               disabled={webhookTesting || !webhookConfig.webhook_url}
             >
               {webhookTesting ? (
@@ -424,8 +537,7 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
     "file_type": "text",
     "size_bytes": 1024,
     "project_id": "project-uuid",
-    "sub_project_id": "sub-project-uuid",
-    "storage_path": "path/in/supabase"
+    "sub_project_id": "sub-project-uuid"
   },
   "project": {
     "id": "project-uuid",
@@ -443,6 +555,8 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
                 <li><code>Content-Type: application/json</code></li>
                 <li><code>X-Webhook-Event: file.created | file.updated</code></li>
                 <li><code>X-Webhook-Attempt: 1-3</code> (retry count)</li>
+                <li><code>X-Webhook-User-Id: user-uuid</code></li>
+                <li><code>X-Webhook-File-Id: file-uuid</code></li>
               </ul>
             </div>
           </div>
@@ -513,7 +627,7 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
                   disabled={saving}
                 />
                 <p className="text-muted-foreground text-xs">
-                  <strong>Service Role Secret</strong> from Project Settings → API. 
+                  <strong>Service Role Secret</strong> from Project Settings → API.
                   Provides full database access (bypasses RLS).
                 </p>
               </div>
@@ -564,24 +678,24 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button 
-                  onClick={saveConfig} 
+                <Button
+                  onClick={saveConfig}
                   disabled={saving || !config.supabaseUrl || (!config.supabaseAnonKey && !config.serviceRoleSecret)}
                 >
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {status.is_configured ? 'Update Configuration' : 'Save Configuration'}
                 </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={testConnection} 
+                <Button
+                  variant="outline"
+                  onClick={testConnection}
                   disabled={testing || !status.is_configured}
                 >
                   {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
                   Test Connection
                 </Button>
                 {status.has_service_role && !status.schema_initialized && (
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     onClick={initializeSchema}
                     disabled={initializing || !status.is_configured}
                   >
@@ -609,13 +723,13 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
                     )}
                     <span>{testResult.message}</span>
                   </div>
-                  
+
                   {testResult.schemaStatus && (
                     <div className="mt-2 text-xs">
                       <p className="font-medium">Schema Status:</p>
                       <p>
-                        {testResult.schemaStatus.initialized 
-                          ? `✓ All tables ready (${testResult.schemaStatus.existingTables.length} tables)` 
+                        {testResult.schemaStatus.initialized
+                          ? `✓ All tables ready (${testResult.schemaStatus.existingTables.length} tables)`
                           : `⚠ Missing tables: ${testResult.schemaStatus.missingTables.join(', ')}`
                         }
                       </p>
@@ -636,9 +750,9 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
 
               <div className="relative">
                 <div className="absolute right-2 top-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={copySqlScript}
                     className="h-8 gap-1"
                   >
@@ -691,12 +805,6 @@ export function UserIntegrations({ userId }: UserIntegrationsProps) {
             <p className="font-medium">✓ Create Tables & Indexes</p>
             <p className="text-muted-foreground">
               Programmatically create tables, indexes, and functions in the user&apos;s database.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <p className="font-medium">✓ Storage Management</p>
-            <p className="text-muted-foreground">
-              Create buckets, upload files, and manage storage objects.
             </p>
           </div>
           <div className="space-y-1">

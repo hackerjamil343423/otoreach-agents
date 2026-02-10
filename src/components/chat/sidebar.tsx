@@ -94,7 +94,7 @@ export const SideBar = () => {
     }
   }
   const handleNewChat = () => {
-    onCreateDefaultChat()
+    router.push('/chat')
     dismissIfMobile()
   }
   const startRename = (chatId: string, currentTitle: string) => {
@@ -194,13 +194,13 @@ export const SideBar = () => {
                           : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5'
                       )}
                       onClick={() => {
-                        onChangeChat(chat)
+                        router.push(`/chat/${chat.id}`)
                         dismissIfMobile()
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
-                          onChangeChat(chat)
+                          router.push(`/chat/${chat.id}`)
                           dismissIfMobile()
                         }
                       }}

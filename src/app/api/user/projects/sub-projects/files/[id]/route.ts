@@ -1,15 +1,14 @@
 /**
  * Individual File API
  *
- * GET - Get a single file
- * PUT - Update file content
+ * GET - Get a single file with content from Neon DB
+ * PUT - Update file content and metadata
  * DELETE - Delete a file
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { validateSession } from '@/lib/auth/session'
 import { sql } from '@/lib/db'
-import { createSupabaseAdminClient } from '@/lib/supabase/client'
 import { sendFileToWebhook } from '@/lib/webhook/userWebhook'
 
 async function validateRequest(req: NextRequest): Promise<{ userId: string } | null> {
@@ -28,7 +27,7 @@ async function validateRequest(req: NextRequest): Promise<{ userId: string } | n
   return { userId: sessionResult.payload.userId }
 }
 
-// GET /api/user/projects/sub-projects/files/[id] - Get file content
+// GET /api/user/projects/sub-projects/files/[id] - Get file with content
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -42,7 +41,7 @@ export async function GET(
     const { userId } = auth
     const { id: fileId } = await params
 
-    // Get file metadata and verify ownership
+    // Get file with content and verify ownership
     const fileResult = await sql`
       SELECT pf.*, sp.project_id
       FROM project_files pf
@@ -55,25 +54,7 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    const file = fileResult[0]
-
-    // Get file content from Supabase
-    const supabase = await createSupabaseAdminClient(userId)
-    const { data, error } = await supabase.storage
-      .from('projects')
-      .download(file.supabase_storage_path)
-
-    if (error) {
-      console.error('Failed to download file:', error)
-      return NextResponse.json({ error: 'Failed to load file content' }, { status: 500 })
-    }
-
-    const content = await data.text()
-
-    return NextResponse.json({
-      ...file,
-      content
-    })
+    return NextResponse.json(fileResult[0])
   } catch (error) {
     console.error('Error fetching file:', error)
     return NextResponse.json({ error: 'Failed to fetch file' }, { status: 500 })
@@ -97,7 +78,7 @@ export async function PUT(
 
     // Get file metadata and verify ownership
     const fileResult = await sql`
-      SELECT pf.*, sp.project_id
+      SELECT pf.*, sp.project_id, p.name as project_name, sp.name as sub_project_name
       FROM project_files pf
       JOIN sub_projects sp ON sp.id = pf.sub_project_id
       JOIN projects p ON p.id = sp.project_id
@@ -108,48 +89,30 @@ export async function PUT(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    const file = fileResult[0]
+    const file = fileResult[0] as Record<string, unknown>
 
-    // Update file in Supabase if content is provided
+    // Update content in database if provided
     if (content !== undefined) {
-      const supabase = await createSupabaseAdminClient(userId)
-      const encoder = new TextEncoder()
-      const uint8Array = encoder.encode(content)
-      const blob = new Blob([uint8Array], { type: 'text/plain' })
-
-      const { error } = await supabase.storage
-        .from('projects')
-        .upload(file.supabase_storage_path, blob, { upsert: true })
-
-      if (error) {
-        console.error('Failed to upload file:', error)
-        return NextResponse.json({ error: 'Failed to save file' }, { status: 500 })
-      }
-
-      // Update metadata in database
+      const contentString = String(content)
       await sql`
         UPDATE project_files
-        SET size_bytes = ${content.length}, updated_at = NOW()
+        SET content = ${contentString}, size_bytes = ${contentString.length}, updated_at = NOW()
         WHERE id = ${fileId}
       `
 
-      // Sync to Supabase document_metadata if content changed
-      try {
-        const { saveDocumentMetadata } = await import('@/lib/supabase/documentMetadata')
-        await saveDocumentMetadata(userId, {
-          id: fileId,
-          title: file.name,
-          url: file.supabase_storage_path,
-          schema: file.file_type,
-          category: category || file.category || 'documents',
-          sub_category: subCategory || file.sub_category,
-          project_id: file.project_id,
-          sub_project_id: file.sub_project_id,
-          source: 'project'
-        })
-      } catch (syncError) {
-        console.warn('Failed to sync to document_metadata:', syncError)
-      }
+      // Trigger webhook asynchronously if content was updated
+      void sendFileToWebhook(userId, fileId, contentString, 'file.updated', {
+        project_id: file.project_id as string,
+        project_name: file.project_name as string,
+        sub_project_id: file.sub_project_id as string,
+        sub_project_name: file.sub_project_name as string,
+        file_name: file.name as string,
+        file_type: file.file_type as string,
+        category,
+        sub_category: subCategory
+      }).catch(err => {
+        console.error('Webhook error (file.updated):', err)
+      })
     }
 
     // Update description if provided
@@ -159,16 +122,6 @@ export async function PUT(
         SET description = ${description || null}, updated_at = NOW()
         WHERE id = ${fileId}
       `
-    }
-
-    // Note: category and subCategory are NOT stored in Neon
-    // They are ONLY stored in the user's Supabase document_metadata table
-
-    // Trigger webhook asynchronously if content was updated
-    if (content !== undefined) {
-      void sendFileToWebhook(userId, fileId, content, 'file.updated').catch(err => {
-        console.error('Webhook error (file.updated):', err)
-      })
     }
 
     return NextResponse.json({ success: true })
@@ -192,26 +145,18 @@ export async function DELETE(
     const { userId } = auth
     const { id: fileId } = await params
 
-    // Get file metadata and verify ownership
+    // Verify ownership
     const fileResult = await sql`
-      SELECT pf.supabase_storage_path
+      SELECT pf.id
       FROM project_files pf
       JOIN sub_projects sp ON sp.id = pf.sub_project_id
       JOIN projects p ON p.id = sp.project_id
       WHERE pf.id = ${fileId} AND p.user_id = ${userId}
     `
 
-    if (fileResult.length === 0 || !fileResult[0]) {
+    if (fileResult.length === 0) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
-
-    const { supabase_storage_path } = fileResult[0]
-
-    // Delete from Supabase
-    const supabase = await createSupabaseAdminClient(userId)
-    await supabase.storage
-      .from('projects')
-      .remove([supabase_storage_path])
 
     // Delete from database
     await sql`DELETE FROM project_files WHERE id = ${fileId}`

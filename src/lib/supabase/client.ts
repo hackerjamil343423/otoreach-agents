@@ -145,26 +145,47 @@ export async function testSupabaseConnection(
 
 /**
  * Ensure the projects bucket exists in the user's Supabase
- * Creates it if it doesn't exist
+ * Creates it if it doesn't exist (requires service role)
  */
 export async function ensureProjectBucket(userId: string): Promise<void> {
-  const supabase = await createSupabaseClient(userId, 'service_role')
+  let supabase
+  try {
+    supabase = await createSupabaseClient(userId, 'service_role')
+  } catch (error) {
+    // User doesn't have service role configured - try with anon key
+    // We won't be able to create the bucket, but we can check if it exists
+    console.warn('Service role not configured, checking bucket with anon key')
+    try {
+      supabase = await createSupabaseClient(userId, 'anon')
+    } catch (anonError) {
+      throw new Error('No valid Supabase credentials configured')
+    }
+  }
 
   const { data: buckets, error } = await supabase.storage.listBuckets()
 
   if (error) {
-    throw new Error(`Failed to list buckets: ${error.message}`)
+    // If we can't list buckets, the bucket might still exist
+    // This can happen with anon key if RLS policies restrict bucket listing
+    console.warn('Could not list buckets, continuing anyway:', error.message)
+    return
   }
 
   const bucketName = 'projects'
 
   if (!buckets?.find(b => b.name === bucketName)) {
-    const { error: createError } = await supabase.storage.createBucket(bucketName, {
-      public: false
-    })
+    // Try to create the bucket (will only work with service role)
+    try {
+      const { error: createError } = await supabase.storage.createBucket(bucketName, {
+        public: false
+      })
 
-    if (createError) {
-      throw new Error(`Failed to create bucket: ${createError.message}`)
+      if (createError) {
+        throw new Error(`Failed to create bucket: ${createError.message}`)
+      }
+    } catch (createError) {
+      console.warn('Could not create bucket:', createError)
+      // Don't throw - the bucket might be created by an admin
     }
   }
 }
